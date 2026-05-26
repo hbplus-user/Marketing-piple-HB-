@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 165 100">
+  <rect width="165" height="100" fill="white"/>
+
+  <!-- H: left vertical bar -->
+  <rect x="0" y="0" width="14" height="100" fill="black"/>
+
+  <!-- H: crossbar — meets B at x=74 -->
+  <rect x="14" y="43" width="60" height="14" fill="black"/>
+
+  <!--
+    B upper bracket: thick C-shape (open left)
+    Outer: straight top → rounded corner → straight right → rounded corner → straight bottom
+    Inner: same shape inset by 14 (stroke width)
+    fill-rule evenodd punches the hollow
+  -->
+  <path fill="black" fill-rule="evenodd" d="
+    M 74,0 H 110 A 18,18 0 0,1 128,18 V 32 A 18,18 0 0,1 110,50 H 74 Z
+    M 74,14 H 110 A 4,4 0 0,1 114,18 V 32 A 4,4 0 0,1 110,36 H 74 Z
+  "/>
+
+  <!--
+    B lower bracket: same concept, slightly larger outer radius
+  -->
+  <path fill="black" fill-rule="evenodd" d="
+    M 74,50 H 112 A 20,20 0 0,1 132,70 V 80 A 20,20 0 0,1 112,100 H 74 Z
+    M 74,64 H 112 A 6,6 0 0,1 118,70 V 80 A 6,6 0 0,1 112,86 H 74 Z
+  "/>
+
+  <!-- Plus: horizontal bar -->
+  <rect x="130" y="62" width="35" height="12" fill="black"/>
+
+  <!-- Plus: vertical bar -->
+  <rect x="139" y="50" width="12" height="44" fill="black"/>
+</svg>

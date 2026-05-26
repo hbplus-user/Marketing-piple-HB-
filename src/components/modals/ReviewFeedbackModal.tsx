@@ -1,0 +1,228 @@
+import { useState } from 'react';
+import { format } from 'date-fns';
+import { Paperclip, ImageIcon, Link, UserMinus, ShieldCheck } from 'lucide-react';
+import Modal from '../shared/Modal';
+import Badge from '../shared/Badge';
+import RoundBadge from '../shared/RoundBadge';
+import Avatar from '../shared/Avatar';
+import { useApp } from '../../context/AppContext';
+import { USERS } from '../../data/mockData';
+import { canApprove, canRequestChanges, canRemoveCreator, isFullApproval } from '../../utils/permissions';
+
+export default function ReviewFeedbackModal({ open, requestId }: { open: boolean; requestId?: string }) {
+  const { requests, closeModal, approveRequest, requestChanges, removeCreatorFromApproval, currentUser } = useApp();
+  const [comment, setComment] = useState('');
+  const [refLink, setRefLink] = useState('');
+
+  const req = requests.find(r => r.id === requestId);
+  if (!req) return null;
+
+  const userCanApprove    = canApprove(currentUser.role, req, currentUser.id);
+  const userCanRequest    = canRequestChanges(currentUser.role, req, currentUser.id);
+  const userCanRemove     = canRemoveCreator(currentUser.role, req, currentUser.id);
+  const isManager         = currentUser.role === 'manager';
+  const isFull            = isFullApproval(currentUser.role);
+  const creatorUser       = USERS.find(u => u.id === req.requesterId);
+
+  const handleApprove = () => {
+    approveRequest(req.id);
+    closeModal();
+  };
+
+  const handleRequestChanges = () => {
+    if (!comment.trim()) return;
+    requestChanges(req.id, comment.trim(), refLink.trim() || undefined);
+    setComment('');
+    setRefLink('');
+    closeModal();
+  };
+
+  const handleRemoveCreator = () => {
+    removeCreatorFromApproval(req.id);
+  };
+
+  return (
+    <Modal open={open} onClose={closeModal} size="full">
+      <div className="flex h-[75vh]">
+        {/* Left: asset preview */}
+        <div className="flex-[3] border-r border-gray-100 flex flex-col">
+          <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100">
+            <span className="text-xs font-mono text-gray-400">{req.id}</span>
+            <Badge pipeline={req.pipeline} />
+            <RoundBadge round={req.currentRound} />
+            <span className="text-xs text-gray-500">
+              {req.attachments.length} attachment{req.attachments.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="flex-1 flex flex-col items-center justify-center p-8">
+            <div
+              className="w-full max-w-xl aspect-video rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-3"
+              style={{ backgroundImage: 'repeating-linear-gradient(45deg, #f3f4f6 0, #f3f4f6 10px, #f9fafb 0, #f9fafb 50%)' }}
+            >
+              <ImageIcon size={32} className="text-gray-300" />
+              <p className="text-sm text-gray-400 font-medium">Asset preview</p>
+              {req.attachments.length > 0 && (
+                <div className="flex flex-wrap gap-2 justify-center">
+                  {req.attachments.map(a => (
+                    <span key={a} className="flex items-center gap-1 px-2 py-1 bg-white rounded-lg border border-gray-200 text-xs text-gray-500 shadow-sm">
+                      <Paperclip size={10} />
+                      {a}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <h3 className="mt-4 text-sm font-semibold text-gray-700">{req.title}</h3>
+          </div>
+        </div>
+
+        {/* Right: feedback thread */}
+        <div className="flex-[2] flex flex-col">
+          <div className="px-5 py-4 border-b border-gray-100">
+            <h3 className="text-sm font-bold text-gray-900">Feedback thread</h3>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+            {req.rounds.map(round => (
+              <div key={round.round}>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Round {round.round}</span>
+                  <div className="flex-1 h-px bg-gray-100" />
+                  <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                    round.status === 'approved' ? 'bg-emerald-100 text-emerald-600' :
+                    round.status === 'changes-requested' ? 'bg-amber-100 text-amber-600' :
+                    'bg-gray-100 text-gray-500'
+                  }`}>
+                    {round.status.replace('-', ' ')}
+                  </span>
+                </div>
+                {round.comments.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic px-1">No comments yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {round.comments.map((c, i) => {
+                      const user = USERS.find(u => u.id === c.userId);
+                      return (
+                        <div key={i} className="flex items-start gap-2.5">
+                          {user && <Avatar initials={user.initials} color={user.avatarColor} size="sm" title={user.name} />}
+                          <div className="flex-1 bg-gray-50 rounded-xl px-3 py-2">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[11px] font-semibold text-gray-700">{user?.name}</span>
+                              <span className="text-[10px] text-gray-400">{format(c.createdAt, 'MMM d, h:mm a')}</span>
+                            </div>
+                            <p className="text-xs text-gray-600">{c.text}</p>
+                            {c.referenceLink && (
+                              <a
+                                href={c.referenceLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-1 flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-700 truncate"
+                              >
+                                <Link size={10} />
+                                {c.referenceLink}
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Comment input + actions */}
+          <div className="px-5 py-4 border-t border-gray-100 space-y-2.5">
+            <textarea
+              value={comment}
+              onChange={e => setComment(e.target.value)}
+              placeholder={`Comment as ${currentUser.name}…`}
+              rows={2}
+              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+            />
+
+            {/* Reference link */}
+            <div className="relative">
+              <Link size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="url"
+                value={refLink}
+                onChange={e => setRefLink(e.target.value)}
+                placeholder="Reference link (optional)"
+                className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+              />
+            </div>
+
+            {/* Remove creator from approval — manager or owner only */}
+            {userCanRemove && !req.creatorRemovedFromApproval && creatorUser && (
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <button
+                  type="button"
+                  onClick={handleRemoveCreator}
+                  className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-red-600 transition-colors"
+                >
+                  <UserMinus size={12} />
+                  Remove {creatorUser.name} from approval chain
+                </button>
+              </label>
+            )}
+            {req.creatorRemovedFromApproval && creatorUser && (
+              <p className="flex items-center gap-1.5 text-[11px] text-gray-400">
+                <UserMinus size={11} />
+                {creatorUser.name} removed from approval chain
+              </p>
+            )}
+
+            {/* Approval context notice */}
+            {userCanApprove && !isFull && (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-100">
+                <ShieldCheck size={13} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                <p className="text-[11px] text-amber-700 leading-relaxed">
+                  Your approval marks this as <strong>Partially Approved</strong>. Manager sign-off is still required for final completion.
+                </p>
+              </div>
+            )}
+            {isManager && (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100">
+                <ShieldCheck size={13} className="text-emerald-500 mt-0.5 flex-shrink-0" />
+                <p className="text-[11px] text-emerald-700">
+                  As manager, your approval is <strong>final</strong> and marks this request as Done.
+                </p>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              {userCanRequest && (
+                <button
+                  onClick={handleRequestChanges}
+                  disabled={!comment.trim()}
+                  className="flex-1 py-2 text-xs font-medium border border-gray-200 hover:bg-gray-50 disabled:opacity-40 text-gray-700 rounded-lg transition-colors"
+                >
+                  Request changes
+                </button>
+              )}
+              {userCanApprove && (
+                <button
+                  onClick={handleApprove}
+                  className={`flex-1 py-2 text-xs font-medium text-white rounded-lg transition-colors ${
+                    isFull
+                      ? 'bg-emerald-600 hover:bg-emerald-700'
+                      : 'bg-amber-500 hover:bg-amber-600'
+                  }`}
+                >
+                  {isFull ? 'Final Approve' : 'Partially Approve'}
+                </button>
+              )}
+              {!userCanApprove && !userCanRequest && (
+                <p className="text-[11px] text-gray-400 text-center w-full py-1">
+                  You can review and comment, but not approve.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}

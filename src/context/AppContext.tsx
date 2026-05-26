@@ -1,0 +1,291 @@
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { isWithinInterval, startOfDay, endOfDay } from 'date-fns';
+import type { BackupSnapshot, ContentRequest, ModalState, Pipeline, Role, User, View } from '../types';
+import { USERS, MOCK_REQUESTS } from '../data/mockData';
+import { calcInternalDeadline, getUrgency } from '../utils/deadlineUtils';
+import { canViewAllRequests } from '../utils/permissions';
+import {
+  compressRequests, decompressRequests,
+  fetchBackupsFromSupabase, saveBackupToSupabase, deleteBackupFromSupabase,
+} from '../utils/backupUtils';
+import { supabase } from '../lib/supabase';
+
+const AUTO_INTERVAL = 6 * 60 * 60 * 1000;
+
+export interface DateRange {
+  start: Date | null;
+  end: Date | null;
+}
+
+interface AppState {
+  currentUser: User;
+  requests: ContentRequest[];
+  filteredRequests: ContentRequest[];
+  activeView: View;
+  activeModal: ModalState | null;
+  activePipelines: Pipeline[];
+  dateRange: DateRange;
+  backups: BackupSnapshot[];
+  backupsLoading: boolean;
+  setCurrentUser: (user: User) => void;
+  setActiveView: (view: View) => void;
+  openModal: (modal: ModalState) => void;
+  closeModal: () => void;
+  updateRequest: (id: string, updates: Partial<ContentRequest>) => void;
+  addRequest: (req: ContentRequest) => void;
+  approveRequest: (id: string) => void;
+  requestChanges: (id: string, comment: string, referenceLink?: string) => void;
+  editPostDate: (id: string, newDate: Date, reason: string) => void;
+  removeCreatorFromApproval: (id: string) => void;
+  addComment: (id: string, text: string, referenceLink?: string) => void;
+  createBackup: (label?: string) => Promise<void>;
+  restoreAll: (backupId: string) => Promise<void>;
+  restoreByRole: (backupId: string, role: Role) => Promise<void>;
+  restoreByUser: (backupId: string, userId: string) => Promise<void>;
+  restoreOne: (backupId: string, requestId: string) => Promise<void>;
+  deleteBackup: (backupId: string) => Promise<void>;
+  togglePipeline: (p: Pipeline) => void;
+  setDateRange: (range: DateRange) => void;
+  clearFilters: () => void;
+}
+
+const AppContext = createContext<AppState | null>(null);
+
+export function AppProvider({ children }: { children: React.ReactNode }) {
+  const [currentUser, setCurrentUser] = useState<User>(USERS[0]);
+  const [requests, setRequests]       = useState<ContentRequest[]>(MOCK_REQUESTS);
+  const [activeView, setActiveView]   = useState<View>('kanban');
+  const [activeModal, setActiveModal] = useState<ModalState | null>(null);
+  const [activePipelines, setActivePipelines] = useState<Pipeline[]>([]);
+  const [dateRange, setDateRangeState]        = useState<DateRange>({ start: null, end: null });
+  const [backups, setBackups]         = useState<BackupSnapshot[]>([]);
+  const [backupsLoading, setBackupsLoading] = useState(true);
+
+  // Load backups from Supabase on mount
+  useEffect(() => {
+    fetchBackupsFromSupabase().then(data => {
+      setBackups(data);
+      setBackupsLoading(false);
+    });
+  }, []);
+
+  const openModal  = useCallback((modal: ModalState) => setActiveModal(modal), []);
+  const closeModal = useCallback(() => setActiveModal(null), []);
+
+  const togglePipeline = useCallback((p: Pipeline) => {
+    setActivePipelines(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]);
+  }, []);
+
+  const setDateRange = useCallback((range: DateRange) => setDateRangeState(range), []);
+
+  const clearFilters = useCallback(() => {
+    setActivePipelines([]);
+    setDateRangeState({ start: null, end: null });
+  }, []);
+
+  const filteredRequests = useMemo(() => {
+    let result = requests;
+    if (!canViewAllRequests(currentUser.role)) {
+      result = result.filter(r =>
+        r.requesterId === currentUser.id ||
+        r.ownerId === currentUser.id ||
+        r.assigneeId === currentUser.id ||
+        r.reviewerIds.includes(currentUser.id)
+      );
+    }
+    if (activePipelines.length > 0) {
+      result = result.filter(r => activePipelines.includes(r.pipeline));
+    }
+    if (dateRange.start && dateRange.end) {
+      result = result.filter(r =>
+        isWithinInterval(r.postDate, { start: startOfDay(dateRange.start!), end: endOfDay(dateRange.end!) })
+      );
+    } else if (dateRange.start) {
+      result = result.filter(r => r.postDate >= startOfDay(dateRange.start!));
+    }
+    // Always sort: overdue → urgent → due-soon → on-track
+    const urgencyRank = { overdue: 0, urgent: 1, 'due-soon': 2, 'on-track': 3 } as const;
+    return [...result].sort((a, b) => urgencyRank[getUrgency(a)] - urgencyRank[getUrgency(b)]);
+  }, [requests, activePipelines, dateRange, currentUser]);
+
+  const updateRequest = useCallback((id: string, updates: Partial<ContentRequest>) => {
+    setRequests(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
+  }, []);
+
+  const addRequest = useCallback((req: ContentRequest) => {
+    setRequests(prev => [req, ...prev]);
+  }, []);
+
+  const approveRequest = useCallback((id: string) => {
+    setRequests(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      const updatedRounds = r.rounds.map((round, i) =>
+        i === r.currentRound ? { ...round, status: 'approved' as const } : round
+      );
+      const isManager = currentUser.role === 'manager';
+      return {
+        ...r,
+        // Only manager gives final Done; anyone else gives Partially Approved
+        status: isManager ? 'Done' : 'Partially Approved',
+        approvedAt: isManager ? new Date() : null,
+        approvedBy: [...r.approvedBy, currentUser.id],
+        rounds: updatedRounds,
+      };
+    }));
+  }, [currentUser.id, currentUser.role]);
+
+  const requestChanges = useCallback((id: string, comment: string, referenceLink?: string) => {
+    setRequests(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      const updatedRounds = r.rounds.map((round, i) =>
+        i === r.currentRound ? { ...round, status: 'changes-requested' as const } : round
+      );
+      const newRound = {
+        round: r.currentRound + 1,
+        comments: comment ? [{ userId: currentUser.id, text: comment, createdAt: new Date(), referenceLink }] : [],
+        status: 'pending' as const,
+      };
+      return { ...r, currentRound: r.currentRound + 1, rounds: [...updatedRounds, newRound], status: 'In Progress' as const };
+    }));
+  }, [currentUser.id]);
+
+  const editPostDate = useCallback((id: string, newDate: Date, reason: string) => {
+    setRequests(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      return {
+        ...r,
+        postDate: newDate,
+        internalDeadline: calcInternalDeadline(newDate),
+        postDateHistory: [...r.postDateHistory, { date: r.postDate, reason, changedBy: currentUser.id }],
+      };
+    }));
+  }, [currentUser.id]);
+
+  const removeCreatorFromApproval = useCallback((id: string) => {
+    setRequests(prev => prev.map(r => r.id === id ? { ...r, creatorRemovedFromApproval: true } : r));
+  }, []);
+
+  const addComment = useCallback((id: string, text: string, referenceLink?: string) => {
+    if (!text.trim()) return;
+    setRequests(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      const newComment = { userId: currentUser.id, text: text.trim(), createdAt: new Date(), referenceLink };
+      const updatedRounds = r.rounds.map((round, i) =>
+        i === r.currentRound
+          ? { ...round, comments: [...round.comments, newComment] }
+          : round
+      );
+      return { ...r, rounds: updatedRounds };
+    }));
+  }, [currentUser.id]);
+
+  // ── Backup helpers ────────────────────────────────────────────────────────
+
+  const requestsRef = useRef(requests);
+  requestsRef.current = requests;
+
+  const buildAndSave = useCallback(async (label: string, reqs: ContentRequest[]) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    const data = await compressRequests(reqs);
+    const snapshot: BackupSnapshot = {
+      id:           `backup-${Date.now()}`,
+      label,
+      createdAt:    new Date().toISOString(),
+      createdBy:    user?.id ?? null,
+      requestCount: reqs.length,
+      data,
+    };
+    await saveBackupToSupabase(snapshot);
+    setBackups(prev => [snapshot, ...prev]);
+  }, []);
+
+  const createBackup = useCallback(async (label = 'Manual backup') => {
+    await buildAndSave(label, requestsRef.current);
+  }, [buildAndSave]);
+
+  // ── Restore helpers ───────────────────────────────────────────────────────
+
+  const getRestoredRequests = useCallback(async (backupId: string): Promise<ContentRequest[] | null> => {
+    const snapshot = backups.find(b => b.id === backupId);
+    if (!snapshot) return null;
+    return decompressRequests(snapshot.data);
+  }, [backups]);
+
+  const mergeRestored = useCallback((current: ContentRequest[], incoming: ContentRequest[]) => {
+    const map = new Map(current.map(r => [r.id, r]));
+    for (const r of incoming) map.set(r.id, r);
+    return Array.from(map.values());
+  }, []);
+
+  const restoreAll = useCallback(async (backupId: string) => {
+    const restored = await getRestoredRequests(backupId);
+    if (!restored) return;
+    setRequests(restored);
+  }, [getRestoredRequests]);
+
+  const restoreByRole = useCallback(async (backupId: string, role: Role) => {
+    const restored = await getRestoredRequests(backupId);
+    if (!restored) return;
+    const roleUserIds = new Set(USERS.filter(u => u.role === role).map(u => u.id));
+    const filtered = restored.filter(r => roleUserIds.has(r.requesterId));
+    setRequests(prev => mergeRestored(prev, filtered));
+  }, [getRestoredRequests, mergeRestored]);
+
+  const restoreByUser = useCallback(async (backupId: string, userId: string) => {
+    const restored = await getRestoredRequests(backupId);
+    if (!restored) return;
+    const filtered = restored.filter(r => r.requesterId === userId);
+    setRequests(prev => mergeRestored(prev, filtered));
+  }, [getRestoredRequests, mergeRestored]);
+
+  const restoreOne = useCallback(async (backupId: string, requestId: string) => {
+    const restored = await getRestoredRequests(backupId);
+    if (!restored) return;
+    const target = restored.find(r => r.id === requestId);
+    if (!target) return;
+    setRequests(prev => mergeRestored(prev, [target]));
+  }, [getRestoredRequests, mergeRestored]);
+
+  const deleteBackup = useCallback(async (backupId: string) => {
+    await deleteBackupFromSupabase(backupId);
+    setBackups(prev => prev.filter(b => b.id !== backupId));
+  }, []);
+
+  // ── Auto-backup every 6 hours ─────────────────────────────────────────────
+
+  useEffect(() => {
+    const runAutoBackup = () => {
+      buildAndSave(`Auto backup · ${new Date().toLocaleString()}`, requestsRef.current);
+    };
+
+    // Fire on mount if no auto-backup exists or last one is older than 6 hours
+    fetchBackupsFromSupabase().then(existing => {
+      const lastAuto = existing.find(b => b.label.startsWith('Auto backup'));
+      const msSinceLast = lastAuto ? Date.now() - new Date(lastAuto.createdAt).getTime() : Infinity;
+      if (msSinceLast >= AUTO_INTERVAL) runAutoBackup();
+    });
+
+    const timer = setInterval(runAutoBackup, AUTO_INTERVAL);
+    return () => clearInterval(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <AppContext.Provider value={{
+      currentUser, requests, filteredRequests, activeView, activeModal,
+      activePipelines, dateRange, backups, backupsLoading,
+      setCurrentUser, setActiveView, openModal, closeModal,
+      updateRequest, addRequest, approveRequest, requestChanges,
+      editPostDate, removeCreatorFromApproval, addComment,
+      createBackup, restoreAll, restoreByRole, restoreByUser, restoreOne, deleteBackup,
+      togglePipeline, setDateRange, clearFilters,
+    }}>
+      {children}
+    </AppContext.Provider>
+  );
+}
+
+export function useApp() {
+  const ctx = useContext(AppContext);
+  if (!ctx) throw new Error('useApp must be used within AppProvider');
+  return ctx;
+}
