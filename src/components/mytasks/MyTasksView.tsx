@@ -88,7 +88,7 @@ export default function MyTasksView() {
   });
 
   const myRequests = requests.filter(r =>
-    r.assigneeId === currentUser.id || r.requesterId === currentUser.id
+    r.assigneeIds.includes(currentUser.id) || r.requesterId === currentUser.id
   );
   const activeCount = myRequests.filter(r => r.status !== 'Done').length;
   const assignedCount = myRequests.length;

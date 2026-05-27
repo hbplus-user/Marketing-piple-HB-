@@ -16,7 +16,7 @@ export default function KanbanCard({ req }: { req: ContentRequest }) {
   const { openModal } = useApp();
   const alert = isRedAlert(req);
   const pipelineColor = pipelineConfig[req.pipeline]?.dot ?? '#6B7280';
-  const assignee = USERS.find(u => u.id === req.assigneeId);
+  const assignees = USERS.filter(u => req.assigneeIds.includes(u.id));
 
   const handleClick = () => {
     if (req.status === 'In Review' || req.status === 'Done') {
@@ -29,12 +29,27 @@ export default function KanbanCard({ req }: { req: ContentRequest }) {
   return (
     <motion.div
       layout
-      whileHover={{ y: -1 }}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{
+        y: -5,
+        boxShadow: alert
+          ? '0 6px 18px rgba(239,68,68,0.14), 0 18px 36px rgba(239,68,68,0.08), 0 2px 4px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,1)'
+          : '0 6px 18px rgba(15,23,42,0.11), 0 18px 36px rgba(15,23,42,0.07), 0 2px 4px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,1)',
+      }}
+      whileTap={{ y: -1, scale: 0.99 }}
       onClick={handleClick}
-      className={`bg-white rounded-xl border cursor-pointer overflow-hidden transition-shadow hover:shadow-md ${
-        alert ? 'border-red-200' : 'border-gray-100'
+      className={`bg-white rounded-xl cursor-pointer overflow-hidden ${
+        alert ? 'border border-red-100' : 'border border-gray-100/60'
       }`}
-      style={{ borderTopWidth: 4, borderTopColor: pipelineColor }}
+      style={{
+        borderTopWidth: 3,
+        borderTopColor: pipelineColor,
+        borderTopStyle: 'solid',
+        boxShadow: alert
+          ? `0 1px 3px rgba(239,68,68,0.10), 0 4px 10px rgba(239,68,68,0.06), inset 0 1px 0 rgba(255,255,255,0.95)`
+          : `0 1px 3px rgba(15,23,42,0.07), 0 4px 10px rgba(15,23,42,0.05), inset 0 1px 0 rgba(255,255,255,1)`,
+      }}
       role="button"
       tabIndex={0}
       aria-label={`${req.id}: ${req.title}`}
@@ -71,9 +86,11 @@ export default function KanbanCard({ req }: { req: ContentRequest }) {
             <span className="text-[11px] text-gray-400">
               {format(req.postDate, 'MMM d')}
             </span>
-            {assignee && (
-              <Avatar initials={assignee.initials} color={assignee.avatarColor} size="sm" title={assignee.name} />
-            )}
+            <div className="flex -space-x-1">
+              {assignees.slice(0, 3).map(u => (
+                <Avatar key={u.id} initials={u.initials} color={u.avatarColor} size="sm" title={u.name} />
+              ))}
+            </div>
           </div>
         </div>
       </div>

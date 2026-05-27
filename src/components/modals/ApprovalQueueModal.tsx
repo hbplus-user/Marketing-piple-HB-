@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { CheckCircle, ArrowUp, MessageSquare, ExternalLink, AlertTriangle, Link, Send, X, ChevronDown } from 'lucide-react';
 import Modal from '../shared/Modal';
@@ -23,11 +23,11 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
   const [escalateOpenId, setEscalateOpenId] = useState<string | null>(null);
   const [escalateSelections, setEscalateSelections] = useState<Record<string, string[]>>({});
 
-  const pending = requests.filter(r => r.status === 'To Do' && r.assigneeId === null);
+  const pending = requests.filter(r => r.status === 'To Do' && r.assigneeIds.length === 0);
 
   const accept = (id: string) => {
     const employee = USERS.find(u => u.role === 'employee');
-    updateRequest(id, { assigneeId: employee?.id ?? null, status: 'In Progress' });
+    updateRequest(id, { assigneeIds: employee ? [employee.id] : [], status: 'In Progress' });
   };
 
   const toggleEscalate = (id: string) => {
@@ -95,7 +95,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
         {pending.length === 0 ? (
           <div className="text-center py-12">
             <CheckCircle size={32} className="text-emerald-400 mx-auto mb-2" />
-            <p className="text-sm text-gray-500">Queue is clear — all requests reviewed.</p>
+            <p className="text-sm text-gray-500">Queue is clear â€” all requests reviewed.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -146,7 +146,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => { accept(req.id); closeModal(); }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#a9674d] hover:bg-[#8a4f39] text-white text-xs font-medium transition-colors"
                       >
                         <CheckCircle size={12} />
                         Approve
@@ -177,7 +177,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
                       </button>
                       <button
                         onClick={() => { closeModal(); openModal({ type: 'designer-task', requestId: req.id }); }}
-                        className="ml-auto flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700"
+                        className="ml-auto flex items-center gap-1 text-xs text-[#a9674d] hover:text-[#8a4f39]"
                       >
                         View detail
                         <ExternalLink size={11} />
@@ -208,7 +208,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
                               <Avatar initials={u.initials} color={u.avatarColor} size="sm" />
                               {u.name}
                               <span className={`ml-0.5 px-1 py-0.5 rounded text-[10px] capitalize ${
-                                u.role === 'manager' ? 'bg-indigo-100 text-indigo-600' : 'bg-amber-100 text-amber-600'
+                                u.role === 'manager' ? 'bg-[#f0ddd5] text-[#a9674d]' : 'bg-amber-100 text-amber-600'
                               }`}>
                                 {u.role}
                               </span>
@@ -244,7 +244,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
                       <textarea
                         value={form.comment}
                         onChange={e => updateForm(req.id, 'comment', e.target.value)}
-                        placeholder="Describe what needs to change…"
+                        placeholder="Describe what needs to changeâ€¦"
                         rows={2}
                         className="w-full px-3 py-2 text-xs border border-amber-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 bg-white"
                       />

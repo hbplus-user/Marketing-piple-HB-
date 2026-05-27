@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -112,7 +112,7 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
 
         {/* Header */}
         <div className="flex items-center gap-2.5 mb-1">
-          <DatabaseBackup size={17} className="text-indigo-500" />
+          <DatabaseBackup size={17} className="text-[#c47d61]" />
           <h2 className="text-base font-bold text-gray-900">Backup & Restore</h2>
         </div>
         <p className="text-xs text-gray-500 mb-5">
@@ -140,15 +140,15 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
             value={labelInput}
             onChange={e => setLabelInput(e.target.value)}
             placeholder="Backup label (optional)"
-            className="flex-1 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+            className="flex-1 px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
           />
           <button
             onClick={handleCreate}
             disabled={creating}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-medium whitespace-nowrap transition-colors"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#a9674d] hover:bg-[#8a4f39] disabled:opacity-50 text-white text-xs font-medium whitespace-nowrap transition-colors"
           >
             {creating ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-            {creating ? 'Saving…' : 'Create backup'}
+            {creating ? 'Savingâ€¦' : 'Create backup'}
           </button>
         </div>
 
@@ -156,7 +156,7 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
         {backupsLoading ? (
           <div className="text-center py-10 text-gray-400 flex flex-col items-center gap-2">
             <Loader2 size={22} className="animate-spin opacity-40" />
-            <p className="text-xs">Loading backups from Supabase…</p>
+            <p className="text-xs">Loading backups from Supabaseâ€¦</p>
           </div>
         ) : backups.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
@@ -182,7 +182,7 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
                         <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-gray-200 text-gray-600">
                           {snapshot.requestCount} requests
                         </span>
-                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-indigo-100 text-indigo-600">
+                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[#f0ddd5] text-[#a9674d]">
                           compressed · Supabase
                         </span>
                       </div>
@@ -205,7 +205,7 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
                         onClick={() => openPanel(snapshot.id)}
                         className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
                           isPanelOpen
-                            ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                            ? 'border-indigo-300 bg-[#f5ece7] text-[#8a4f39]'
                             : 'border-gray-200 hover:bg-gray-100 text-gray-600'
                         }`}
                       >
@@ -250,7 +250,7 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
                                   onClick={() => setActiveScope(tab.id)}
                                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                                     activeScope === tab.id
-                                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                      ? 'bg-[#f5ece7] text-[#8a4f39] border border-[#f0ddd5]'
                                       : 'text-gray-500 hover:bg-gray-50 border border-transparent'
                                   }`}
                                 >
@@ -331,7 +331,7 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
                                       backupId: snapshot.id, scope: 'user', userId: u.id,
                                       label: `${u.name}'s requests from "${snapshot.label}"`,
                                     })}
-                                    className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-indigo-50 hover:border-indigo-200 transition-colors text-left"
+                                    className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-[#f5ece7] hover:border-[#f0ddd5] transition-colors text-left"
                                   >
                                     <Avatar initials={u.initials} color={u.avatarColor} size="sm" />
                                     <div className="min-w-0">
@@ -350,7 +350,7 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
                             <div>
                               <button
                                 onClick={() => loadIndividual(snapshot)}
-                                className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-700 mb-3 font-medium"
+                                className="flex items-center gap-1.5 text-xs text-[#a9674d] hover:text-[#8a4f39] mb-3 font-medium"
                               >
                                 {loadingExpandId === snapshot.id
                                   ? <Loader2 size={12} className="animate-spin" />
@@ -381,7 +381,7 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
                                           backupId: snapshot.id, scope: 'individual', requestId: req.id,
                                           label: `"${req.title}" (${req.id})`,
                                         })}
-                                        className="flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 hover:bg-indigo-50 hover:border-indigo-200 text-gray-500 hover:text-indigo-600 text-[11px] font-medium transition-colors flex-shrink-0"
+                                        className="flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 hover:bg-[#f5ece7] hover:border-[#f0ddd5] text-gray-500 hover:text-[#a9674d] text-[11px] font-medium transition-colors flex-shrink-0"
                                       >
                                         <RotateCcw size={10} />
                                         Restore
@@ -445,10 +445,10 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
                 <button
                   onClick={executeRestore}
                   disabled={restoring}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium bg-[#a9674d] hover:bg-[#8a4f39] disabled:opacity-50 text-white rounded-lg transition-colors"
                 >
                   {restoring && <Loader2 size={12} className="animate-spin" />}
-                  {restoring ? 'Restoring…' : 'Yes, restore'}
+                  {restoring ? 'Restoringâ€¦' : 'Yes, restore'}
                 </button>
               </div>
             </motion.div>

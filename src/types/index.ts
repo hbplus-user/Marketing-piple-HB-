@@ -33,7 +33,7 @@ export interface ContentRequest {
   status: Status;
   requesterId: string;
   ownerId: string;                        // sole approver (unless manager overrides)
-  assigneeId: string | null;
+  assigneeIds: string[];
   reviewerIds: string[];
   postDate: Date;
   internalDeadline: Date;

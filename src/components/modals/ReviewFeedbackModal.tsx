@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { format } from 'date-fns';
 import { Paperclip, ImageIcon, Link, UserMinus, ShieldCheck } from 'lucide-react';
 import Modal from '../shared/Modal';
@@ -7,10 +7,10 @@ import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 import { USERS } from '../../data/mockData';
-import { canApprove, canRequestChanges, canRemoveCreator, isFullApproval } from '../../utils/permissions';
+import { canApprove, canRequestChanges, canRemoveCreator, isFullApproval, canEditPostDate } from '../../utils/permissions';
 
 export default function ReviewFeedbackModal({ open, requestId }: { open: boolean; requestId?: string }) {
-  const { requests, closeModal, approveRequest, requestChanges, removeCreatorFromApproval, currentUser } = useApp();
+  const { requests, closeModal, approveRequest, requestChanges, removeCreatorFromApproval, currentUser, openModal } = useApp();
   const [comment, setComment] = useState('');
   const [refLink, setRefLink] = useState('');
 
@@ -46,13 +46,27 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
       <div className="flex h-[75vh]">
         {/* Left: asset preview */}
         <div className="flex-[3] border-r border-gray-100 flex flex-col">
-          <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100">
-            <span className="text-xs font-mono text-gray-400">{req.id}</span>
-            <Badge pipeline={req.pipeline} />
-            <RoundBadge round={req.currentRound} />
-            <span className="text-xs text-gray-500">
-              {req.attachments.length} attachment{req.attachments.length !== 1 ? 's' : ''}
-            </span>
+          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 w-full">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-mono text-gray-400">{req.id}</span>
+              <Badge pipeline={req.pipeline} />
+              <RoundBadge round={req.currentRound} />
+              <span className="text-xs text-gray-500">
+                {req.attachments.length} attachment{req.attachments.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+            {canEditPostDate(currentUser.role, req, currentUser.id) && (
+              <button
+                onClick={() => openModal({ type: 'designer-task', requestId: req.id })}
+                className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-gray-500">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                  <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4z" />
+                </svg>
+                Edit Task Details
+              </button>
+            )}
           </div>
           <div className="flex-1 flex flex-col items-center justify-center p-8">
             <div
@@ -116,7 +130,7 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                                 href={c.referenceLink}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="mt-1 flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-700 truncate"
+                                className="mt-1 flex items-center gap-1 text-[11px] text-[#a9674d] hover:text-[#8a4f39] truncate"
                               >
                                 <Link size={10} />
                                 {c.referenceLink}
@@ -137,9 +151,9 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
             <textarea
               value={comment}
               onChange={e => setComment(e.target.value)}
-              placeholder={`Comment as ${currentUser.name}…`}
+              placeholder={`Comment as ${currentUser.name}â€¦`}
               rows={2}
-              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+              className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
             />
 
             {/* Reference link */}
@@ -150,11 +164,11 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                 value={refLink}
                 onChange={e => setRefLink(e.target.value)}
                 placeholder="Reference link (optional)"
-                className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+                className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
               />
             </div>
 
-            {/* Remove creator from approval — manager or owner only */}
+            {/* Remove creator from approval â€” manager or owner only */}
             {userCanRemove && !req.creatorRemovedFromApproval && creatorUser && (
               <label className="flex items-center gap-2 cursor-pointer group">
                 <button

@@ -33,9 +33,9 @@ export function canAccessApprovalQueue(role: Role): boolean {
   return role === 'manager';
 }
 
-/** Only manager can edit post dates. */
-export function canEditPostDate(role: Role): boolean {
-  return role === 'manager';
+/** Requester, manager, and founder can edit post dates/tasks. */
+export function canEditPostDate(role: Role, req: ContentRequest, userId: string): boolean {
+  return role === 'manager' || role === 'founder' || req.requesterId === userId;
 }
 
 /** Manager or task owner can remove creator from approval chain. */

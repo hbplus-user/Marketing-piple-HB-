@@ -13,10 +13,10 @@ const TABS: { id: View; label: string }[] = [
 ];
 
 const PIPELINES: { value: Pipeline; label: string; color: string; bg: string }[] = [
-  { value: 'PM',           label: 'PM',          color: '#7C3AED', bg: '#F5F3FF' },
-  { value: 'Content',      label: 'Content',     color: '#0EA5E9', bg: '#F0F9FF' },
-  { value: 'Art / Design', label: 'Art / Design',color: '#EC4899', bg: '#FDF2F8' },
-  { value: 'Events',       label: 'Events',      color: '#F59E0B', bg: '#FFFBEB' },
+  { value: 'PM',           label: 'PM',          color: '#344161', bg: '#e8ebf1' },
+  { value: 'Content',      label: 'Content',     color: '#4a6b5c', bg: '#edf2ef' },
+  { value: 'Art / Design', label: 'Art / Design',color: '#a9674d', bg: '#f5ece7' },
+  { value: 'Events',       label: 'Events',      color: '#9a7336', bg: '#f7f1e3' },
 ];
 
 export default function ViewTabs() {
@@ -30,50 +30,72 @@ export default function ViewTabs() {
   const allActive = activePipelines.length === 0;
   const hasFilters = activePipelines.length > 0 || dateRange.start !== null;
 
-  // Clicking "All" clears only the pipeline selection
   const handleAllClick = () => {
-    // Remove each active pipeline one by one to reset to "All"
     [...activePipelines].forEach(p => togglePipeline(p));
   };
 
   return (
-    <div className="bg-white border-b border-gray-100">
+    <div
+      className="border-b"
+      style={{
+        background: 'rgba(245,242,233,0.9)',
+        backdropFilter: 'blur(8px)',
+        borderColor: '#ede0d0',
+        boxShadow: '0 1px 3px rgba(83,55,43,0.04)',
+        position: 'relative',
+        zIndex: 40,
+      }}
+    >
       {/* Tab row */}
       <div className="flex items-center gap-1 px-6 py-2 overflow-x-auto">
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveView(tab.id)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
-              activeView === tab.id
-                ? 'bg-indigo-50 text-indigo-700'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-            }`}
-            aria-current={activeView === tab.id ? 'page' : undefined}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {TABS.map(tab => {
+          const active = activeView === tab.id;
+          return (
+            <motion.button
+              key={tab.id}
+              whileTap={{ scale: 0.97 }}
+              onClick={() => setActiveView(tab.id)}
+              className={`px-3 py-1.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
+                active ? 'text-[#53372b]' : 'text-[#a89e8e] hover:text-[#53372b] hover:bg-[#ede0d0]/50'
+              }`}
+              style={active ? {
+                background: 'white',
+                boxShadow: '0 1px 4px rgba(169,103,77,0.12), 0 3px 10px rgba(169,103,77,0.07), inset 0 1px 0 rgba(255,255,255,1)',
+                border: '1px solid rgba(237,224,208,0.8)',
+              } : {}}
+              aria-current={active ? 'page' : undefined}
+            >
+              {tab.label}
+            </motion.button>
+          );
+        })}
       </div>
 
       {/* Filter bar */}
-      <div className="flex items-center gap-3 px-6 py-2.5 border-t border-gray-50 flex-wrap">
+      <div className="flex items-center gap-3 px-6 py-2.5 border-t flex-wrap" style={{ borderColor: '#ede0d0' }}>
 
         {/* Pipeline filters */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mr-1">
+          <span className="text-[11px] font-semibold text-[#a89e8e] uppercase tracking-wider mr-1">
             Pipeline
           </span>
 
-          {/* All chip */}
+          {/* All chip — dark pill */}
           <motion.button
-            whileTap={{ scale: 0.95 }}
+            whileTap={{ scale: 0.95, y: 1 }}
             onClick={handleAllClick}
-            className={`px-2.5 py-1 rounded-full text-[12px] font-medium border transition-all ${
-              allActive
-                ? 'bg-gray-900 text-white border-gray-900 shadow-sm'
-                : 'border-gray-200 bg-white text-gray-500 hover:border-gray-400 hover:text-gray-700'
+            className={`px-2.5 py-1 rounded-full text-[12px] font-medium transition-all ${
+              allActive ? 'text-[#f5f2e9]' : 'text-[#a89e8e] hover:text-[#53372b] hover:border-[#c4b5a4]'
             }`}
+            style={allActive ? {
+              background: 'linear-gradient(180deg, #2a2a2a 0%, #1a1a1a 100%)',
+              border: '1px solid rgba(255,255,255,0.06)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.10), 0 2px 6px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2)',
+            } : {
+              border: '1px solid #ede0d0',
+              background: 'white',
+              boxShadow: '0 1px 2px rgba(83,55,43,0.06), inset 0 1px 0 rgba(255,255,255,0.8)',
+            }}
             aria-pressed={allActive}
           >
             All
@@ -85,19 +107,36 @@ export default function ViewTabs() {
             return (
               <motion.button
                 key={p.value}
-                whileTap={{ scale: 0.95 }}
+                whileTap={{ scale: 0.95, y: 1 }}
                 onClick={() => togglePipeline(p.value)}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium border transition-all ${
-                  active
-                    ? 'border-transparent shadow-sm'
-                    : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium transition-all ${
+                  active ? '' : 'text-[#a89e8e] hover:text-[#53372b]'
                 }`}
-                style={active ? { backgroundColor: p.bg, color: p.color, borderColor: p.color + '44' } : {}}
+                style={active ? {
+                  backgroundColor: p.bg,
+                  color: p.color,
+                  border: `1px solid ${p.color}44`,
+                  boxShadow: `inset 0 1px 0 rgba(255,255,255,0.9), 0 1px 4px ${p.color}28, 0 2px 8px ${p.color}16`,
+                } : {
+                  border: '1px solid #ede0d0',
+                  background: 'white',
+                  boxShadow: '0 1px 2px rgba(83,55,43,0.06), inset 0 1px 0 rgba(255,255,255,0.8)',
+                }}
                 aria-pressed={active}
               >
+                {/* 3D sphere dot */}
                 <span
-                  className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: active ? p.color : '#D1D5DB' }}
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    flexShrink: 0,
+                    display: 'inline-block',
+                    background: active
+                      ? `radial-gradient(circle at 36% 32%, rgba(255,255,255,0.9) 0%, ${p.color} 48%)`
+                      : 'radial-gradient(circle at 36% 32%, rgba(255,255,255,0.8) 0%, #C4B5A4 48%)',
+                    boxShadow: active ? `0 1px 3px ${p.color}55` : '0 1px 2px rgba(83,55,43,0.15)',
+                  }}
                 />
                 {p.label}
               </motion.button>
@@ -106,7 +145,7 @@ export default function ViewTabs() {
         </div>
 
         {/* Divider */}
-        <div className="w-px h-5 bg-gray-200 flex-shrink-0" />
+        <div className="w-px h-5 flex-shrink-0" style={{ background: '#ede0d0' }} />
 
         {/* Date range picker */}
         <DateRangePicker value={dateRange} onChange={setDateRange} />
@@ -120,7 +159,12 @@ export default function ViewTabs() {
               exit={{ opacity: 0, scale: 0.85 }}
               transition={{ duration: 0.15 }}
               onClick={clearFilters}
-              className="ml-auto flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-medium text-gray-500 hover:text-gray-700 border border-gray-200 hover:border-gray-300 bg-white transition-colors"
+              className="ml-auto flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-medium text-[#a89e8e] hover:text-[#53372b] transition-colors"
+              style={{
+                border: '1px solid #ede0d0',
+                background: 'white',
+                boxShadow: '0 1px 2px rgba(83,55,43,0.06), inset 0 1px 0 rgba(255,255,255,0.8)',
+              }}
               aria-label="Clear all filters"
             >
               <X size={11} />

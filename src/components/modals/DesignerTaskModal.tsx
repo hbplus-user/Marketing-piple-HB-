@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+﻿import { useState, useRef, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
 import { Paperclip, Calendar, Link, Send, ChevronRight } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -9,7 +9,8 @@ import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 import { USERS } from '../../data/mockData';
-import { daysToDeadline } from '../../utils/deadlineUtils';
+import { daysToDeadline, calcInternalDeadline } from '../../utils/deadlineUtils';
+import { canEditPostDate } from '../../utils/permissions';
 import type { Status } from '../../types';
 
 const STATUSES: Status[] = ['To Do', 'In Progress', 'In Review', 'Partially Approved', 'Done'];
@@ -32,6 +33,17 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
   const [showRefLink, setShowRefLink]     = useState(false);
   const [composerOpen, setComposerOpen]   = useState(false);
   const [activeTab, setActiveTab]         = useState<ActivityTab>('all');
+  const [dropdownOpen, setDropdownOpen]   = useState(false);
+  
+  // Editing states
+  const [isEditing, setIsEditing]             = useState(false);
+  const [editTitle, setEditTitle]             = useState('');
+  const [editBrief, setEditBrief]             = useState('');
+  const [editAssigneeIds, setEditAssigneeIds] = useState<string[]>([]);
+  const [editPostDateVal, setEditPostDateVal] = useState('');
+  const [editLinks, setEditLinks]             = useState<string[]>([]);
+  const [newLinkInput, setNewLinkInput]       = useState('');
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef   = useRef<HTMLDivElement>(null);
 
@@ -61,7 +73,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
     items.push({ kind: 'history', date: req.createdAt, userId: req.requesterId, text: 'created this request' });
 
     for (const h of req.postDateHistory) {
-      items.push({ kind: 'history', date: h.date, userId: h.changedBy, text: `changed the post date — ${h.reason}` });
+      items.push({ kind: 'history', date: h.date, userId: h.changedBy, text: `changed the post date â€” ${h.reason}` });
     }
 
     for (const round of req.rounds) {
@@ -97,10 +109,21 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [feedItems.length]);
 
+  // Populate edit fields on edit mode trigger
+  useEffect(() => {
+    if (req && isEditing) {
+      setEditTitle(req.title);
+      setEditBrief(req.brief || '');
+      setEditAssigneeIds(req.assigneeIds);
+      setEditPostDateVal(format(req.postDate, 'yyyy-MM-dd'));
+      setEditLinks(req.referenceLinks || []);
+    }
+  }, [isEditing, req]);
+
   if (!req) return null;
 
   const requester = USERS.find(u => u.id === req.requesterId);
-  const assignee  = USERS.find(u => u.id === req.assigneeId);
+  const assignees = USERS.filter(u => req.assigneeIds.includes(u.id));
   const owner     = USERS.find(u => u.id === req.ownerId);
   const reviewers = req.reviewerIds.map(id => USERS.find(u => u.id === id)).filter(Boolean);
   const dtd       = daysToDeadline(req.internalDeadline);
@@ -138,17 +161,20 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
             <StatusChip status={req.status} />
             <RoundBadge round={req.currentRound} />
           </div>
-          <h2 className="text-base font-bold text-gray-900 mb-3">{req.title}</h2>
-          <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-xl w-fit">
-            {STATUSES.map(s => (
-              <button key={s} onClick={() => setStatus(s)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  req.status === s ? 'bg-white text-indigo-700 shadow-sm font-semibold' : 'text-gray-500 hover:text-gray-700'
-                }`}>
-                {s}
-              </button>
-            ))}
-          </div>
+          {isEditing ? (
+            <div className="space-y-1">
+              <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Edit title</label>
+              <input
+                type="text"
+                value={editTitle}
+                onChange={e => setEditTitle(e.target.value)}
+                placeholder="Request title..."
+                className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20"
+              />
+            </div>
+          ) : (
+            <h2 className="text-base font-bold text-gray-900 m-0">{req.title}</h2>
+          )}
         </div>
 
         {/* Scrollable body */}
@@ -156,44 +182,98 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
 
           {/* Brief + metadata */}
           <div className="px-6 py-5 grid grid-cols-3 gap-6">
-            <div className="col-span-2 space-y-4">
-              <div>
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Brief</p>
-                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{req.brief || '—'}</p>
-              </div>
-              {req.attachments.length > 0 && (
+            {isEditing ? (
+              <div className="col-span-2 space-y-4">
                 <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Attachments</p>
-                  <div className="flex flex-wrap gap-2">
-                    {req.attachments.map(a => (
-                      <span key={a} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-600">
-                        <Paperclip size={11} />{a}
-                      </span>
-                    ))}
-                  </div>
+                  <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Brief description</label>
+                  <textarea
+                    value={editBrief}
+                    onChange={e => setEditBrief(e.target.value)}
+                    rows={6}
+                    placeholder="Enter brief description..."
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d] resize-none"
+                  />
                 </div>
-              )}
-              {req.referenceLinks.length > 0 && (
                 <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Reference links</p>
+                  <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Reference links</label>
+                  <div className="flex gap-2 mb-2">
+                    <input
+                      type="url"
+                      value={newLinkInput}
+                      onChange={e => setNewLinkInput(e.target.value)}
+                      placeholder="Add reference URL..."
+                      className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const trimmed = newLinkInput.trim();
+                        if (trimmed && !editLinks.includes(trimmed)) {
+                          setEditLinks([...editLinks, trimmed]);
+                          setNewLinkInput('');
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-[#a9674d] hover:bg-[#8a4f39] text-white rounded-lg text-xs font-medium"
+                    >
+                      Add
+                    </button>
+                  </div>
                   <div className="flex flex-col gap-1.5">
-                    {req.referenceLinks.map(url => (
-                      <a
-                        key={url}
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-50 border border-indigo-100 text-xs text-indigo-700 hover:bg-indigo-100 transition-colors truncate"
-                      >
-                        <Link size={11} className="flex-shrink-0" />
-                        <span className="truncate">{url}</span>
-                      </a>
+                    {editLinks.map((url, idx) => (
+                      <div key={idx} className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[#f5ece7] border border-[#f5ece7] text-xs text-[#8a4f39]">
+                        <span className="truncate flex-1 pr-2">{url}</span>
+                        <button
+                          type="button"
+                          onClick={() => setEditLinks(editLinks.filter(x => x !== url))}
+                          className="text-red-500 hover:text-red-700 font-bold ml-2"
+                        >
+                          Ã—
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>
-              )}
-            </div>
-            <div className="space-y-4 bg-gray-50 rounded-xl p-4 self-start">
+              </div>
+            ) : (
+              <div className="col-span-2 space-y-4">
+                <div>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Brief</p>
+                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{req.brief || 'â€”'}</p>
+                </div>
+                {req.attachments.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Attachments</p>
+                    <div className="flex flex-wrap gap-2">
+                      {req.attachments.map(a => (
+                        <span key={a} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-600">
+                          <Paperclip size={11} />{a}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {req.referenceLinks.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Reference links</p>
+                    <div className="flex flex-col gap-1.5">
+                      {req.referenceLinks.map(url => (
+                        <a
+                          key={url}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#f5ece7] border border-[#f5ece7] text-xs text-[#8a4f39] hover:bg-[#f0ddd5] transition-colors truncate"
+                        >
+                          <Link size={11} className="flex-shrink-0" />
+                          <span className="truncate">{url}</span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+             <div className="space-y-4 bg-gray-50 rounded-xl p-4 self-start">
               {requester && (
                 <div>
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Requester</p>
@@ -212,15 +292,42 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                   </div>
                 </div>
               )}
-              {assignee && (
-                <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Assigned to</p>
-                  <div className="flex items-center gap-2">
-                    <Avatar initials={assignee.initials} color={assignee.avatarColor} size="sm" />
-                    <span className="text-xs font-medium text-gray-700">{assignee.name}</span>
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Assigned to</p>
+                {isEditing ? (
+                  <div className="flex flex-col gap-1">
+                    {USERS.filter(u => u.role !== 'manager').map(u => {
+                      const selected = editAssigneeIds.includes(u.id);
+                      return (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => setEditAssigneeIds(prev =>
+                            prev.includes(u.id) ? prev.filter(x => x !== u.id) : [...prev, u.id]
+                          )}
+                          className={`flex items-center gap-2 px-2 py-1 rounded-lg text-xs font-medium transition-colors text-left ${
+                            selected ? 'bg-[#f5ece7] text-[#8a4f39] border border-[#f0ddd5]' : 'bg-white border border-gray-200 text-gray-600 hover:border-[#f0ddd5]'
+                          }`}
+                        >
+                          <Avatar initials={u.initials} color={u.avatarColor} size="sm" />
+                          {u.name}
+                        </button>
+                      );
+                    })}
                   </div>
-                </div>
-              )}
+                ) : assignees.length > 0 ? (
+                  <div className="flex flex-col gap-1">
+                    {assignees.map(u => (
+                      <div key={u.id} className="flex items-center gap-2">
+                        <Avatar initials={u.initials} color={u.avatarColor} size="sm" />
+                        <span className="text-xs font-medium text-gray-700">{u.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-xs text-gray-400 italic">Unassigned</span>
+                )}
+              </div>
               {reviewers.length > 0 && (
                 <div>
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Reviewers</p>
@@ -231,18 +338,29 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
               )}
               <div>
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Post date</p>
-                <div className="flex items-center gap-1.5 text-xs text-gray-700">
-                  <Calendar size={12} className="text-gray-400" />
-                  {format(req.postDate, 'MMM d, yyyy')}
-                </div>
-                <p className="text-[11px] text-gray-500 mt-0.5">
-                  {dtd >= 0 ? `${dtd}d to deadline` : `${Math.abs(dtd)}d overdue`} · needs {req.daysNeeded}d
-                </p>
+                {isEditing ? (
+                  <input
+                    type="date"
+                    value={editPostDateVal}
+                    onChange={e => setEditPostDateVal(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20"
+                  />
+                ) : (
+                  <>
+                    <div className="flex items-center gap-1.5 text-xs text-gray-700">
+                      <Calendar size={12} className="text-gray-400" />
+                      {format(req.postDate, 'MMM d, yyyy')}
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      {dtd >= 0 ? `${dtd}d to deadline` : `${Math.abs(dtd)}d overdue`} · needs {req.daysNeeded}d
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </div>
 
-          {/* ── Activity ────────────────────────────────────────────── */}
+          {/* â”€â”€ Activity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <div className="px-6 pb-6 border-t border-gray-100">
             {/* Title + tabs */}
             <div className="flex items-center gap-4 pt-5 mb-4">
@@ -251,7 +369,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                 {(['all', 'comments', 'history'] as ActivityTab[]).map(tab => (
                   <button key={tab} onClick={() => setActiveTab(tab)}
                     className={`px-3 py-1 rounded-md text-xs font-medium capitalize transition-all ${
-                      activeTab === tab ? 'bg-white shadow-sm text-indigo-700 border border-gray-200' : 'text-gray-500 hover:text-gray-700'
+                      activeTab === tab ? 'bg-white shadow-sm text-[#8a4f39] border border-gray-200' : 'text-gray-500 hover:text-gray-700'
                     }`}>
                     {tab}
                   </button>
@@ -271,7 +389,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                         onClick={() => openComposer()}
                         className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-400 cursor-text hover:border-gray-300 hover:bg-gray-50/60 transition-colors"
                       >
-                        Add a comment…
+                        Add a commentâ€¦
                       </div>
                       {/* Quick chips */}
                       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
@@ -298,12 +416,12 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                   ) : (
                     /* Expanded composer */
                     <motion.div key="expanded" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-                      <div className="border border-gray-200 rounded-xl focus-within:ring-2 focus-within:ring-indigo-500/30 focus-within:border-indigo-400 overflow-hidden transition-all">
+                      <div className="border border-gray-200 rounded-xl focus-within:ring-2 focus-within:ring-[#a9674d]/20 focus-within:border-[#a9674d] overflow-hidden transition-all">
                         {showRefLink && (
                           <div className="relative border-b border-gray-100">
                             <Link size={11} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                             <input type="url" value={refLink} onChange={e => setRefLink(e.target.value)}
-                              placeholder="Paste reference URL…"
+                              placeholder="Paste reference URLâ€¦"
                               className="w-full pl-8 pr-3 py-2 text-xs bg-gray-50 focus:outline-none placeholder:text-gray-400" />
                           </div>
                         )}
@@ -312,14 +430,14 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                           value={commentText}
                           onChange={e => setCommentText(e.target.value)}
                           onKeyDown={handleKeyDown}
-                          placeholder="Add a comment… (⌘↵ to send, Esc to cancel)"
+                          placeholder="Add a commentâ€¦ (âŒ˜â†µ to send, Esc to cancel)"
                           rows={3}
                           className="w-full px-3 pt-3 pb-1 text-sm resize-none focus:outline-none placeholder:text-gray-400"
                         />
                         <div className="flex items-center justify-between px-2 pb-2">
                           <button onClick={() => setShowRefLink(v => !v)}
                             title={showRefLink ? 'Remove link' : 'Add reference link'}
-                            className={`p-1.5 rounded-lg transition-colors ${showRefLink ? 'bg-indigo-100 text-indigo-600' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}>
+                            className={`p-1.5 rounded-lg transition-colors ${showRefLink ? 'bg-[#f0ddd5] text-[#a9674d]' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}>
                             <Link size={13} />
                           </button>
                           <div className="flex items-center gap-2">
@@ -328,7 +446,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                               Cancel
                             </button>
                             <button onClick={handleSend} disabled={!commentText.trim()}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-medium transition-colors">
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#a9674d] hover:bg-[#8a4f39] disabled:opacity-40 text-white text-xs font-medium transition-colors">
                               <Send size={11} />
                               Save
                             </button>
@@ -366,11 +484,11 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                               {format(item.date, 'MMM d, yyyy')} at {format(item.date, 'h:mm a')}
                             </span>
                           </div>
-                          <div className={`rounded-xl px-3 py-2 text-sm text-gray-700 leading-relaxed ${isMe ? 'bg-indigo-50' : 'bg-gray-50'}`}>
+                          <div className={`rounded-xl px-3 py-2 text-sm text-gray-700 leading-relaxed ${isMe ? 'bg-[#f5ece7]' : 'bg-gray-50'}`}>
                             {item.text}
                             {item.referenceLink && (
                               <a href={item.referenceLink} target="_blank" rel="noopener noreferrer"
-                                className="mt-1 flex items-center gap-1 text-[11px] text-indigo-600 hover:underline truncate">
+                                className="mt-1 flex items-center gap-1 text-[11px] text-[#a9674d] hover:underline truncate">
                                 <Link size={10} />{item.referenceLink}
                               </a>
                             )}
@@ -403,19 +521,159 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50/60">
-          <button className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors">
+        <div className="px-6 py-4 border-t border-gray-100 flex items-start justify-between flex-shrink-0 bg-gray-50/60">
+          <button className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors mt-2">
             <Paperclip size={13} />
             Attach file
           </button>
-          <div className="flex items-center gap-2">
-            <button onClick={closeModal} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Close</button>
-            {req.status !== 'In Review' && req.status !== 'Done' && (
-              <button onClick={() => setStatus('In Review')}
-                className="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors">
-                Submit for review
-              </button>
-            )}
+          
+          <div className="flex flex-col items-end gap-3">
+            <div className="flex items-center gap-2">
+              {isEditing ? (
+                <>
+                  <button
+                    onClick={() => setIsEditing(false)}
+                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!editTitle.trim()) return;
+                      updateRequest(req.id, {
+                        title: editTitle.trim(),
+                        brief: editBrief.trim(),
+                        assigneeIds: editAssigneeIds,
+                        postDate: new Date(editPostDateVal),
+                        internalDeadline: calcInternalDeadline(new Date(editPostDateVal)),
+                        referenceLinks: editLinks,
+                      });
+                      setIsEditing(false);
+                    }}
+                    className="px-4 py-2 text-sm font-semibold bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                  >
+                    Save Changes
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={closeModal} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium">Close</button>
+                  
+                  {/* Edit button for eligible roles */}
+                  {canEditPostDate(currentUser.role, req, currentUser.id) && (
+                    <button
+                      onClick={() => setIsEditing(true)}
+                      className="px-4 py-2 text-sm font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
+                    >
+                      Edit
+                    </button>
+                  )}
+
+                  {/* Split Button Group */}
+                  <div className="relative flex items-center">
+                    <button
+                      onClick={() => {
+                        const nextStepMap: Record<Status, Status> = {
+                          'To Do': 'In Progress',
+                          'In Progress': 'In Review',
+                          'In Review': 'Partially Approved',
+                          'Partially Approved': 'Done',
+                          'Done': 'To Do',
+                        };
+                        setStatus(nextStepMap[req.status]);
+                      }}
+                      className="px-4 py-2 text-sm font-semibold bg-[#a9674d] hover:bg-[#8a4f39] text-white rounded-l-lg transition-colors border-r border-indigo-500/30"
+                    >
+                      {req.status === 'To Do' && 'Start Progress'}
+                      {req.status === 'In Progress' && 'Submit for review'}
+                      {req.status === 'In Review' && 'Approve Round'}
+                      {req.status === 'Partially Approved' && 'Mark as Done'}
+                      {req.status === 'Done' && 'Reopen Request'}
+                    </button>
+                    <div className="relative">
+                      <button
+                        onClick={() => setDropdownOpen(!dropdownOpen)}
+                        className="px-2.5 py-2.5 bg-[#a9674d] hover:bg-[#8a4f39] text-white rounded-r-lg transition-colors flex items-center justify-center"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path d="M6 9l6 6 6-6" />
+                        </svg>
+                      </button>
+                      
+                      {/* Dropdown Menu */}
+                      <AnimatePresence>
+                        {dropdownOpen && (
+                          <>
+                            <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
+                            <motion.div
+                              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                              style={{
+                                position: 'absolute',
+                                bottom: '100%',
+                                right: 0,
+                                marginBottom: '8px',
+                                width: '180px',
+                                background: '#ffffff',
+                                borderRadius: '12px',
+                                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 16px -6px rgba(0,0,0,0.05)',
+                                border: '1px solid #e2e8f0',
+                                padding: '6px',
+                                zIndex: 50,
+                              }}
+                            >
+                              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2.5 py-1.5">Change Progress</div>
+                              {STATUSES.map(s => (
+                                <button
+                                  key={s}
+                                  onClick={() => {
+                                    setStatus(s);
+                                    setDropdownOpen(false);
+                                  }}
+                                  className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-colors flex items-center justify-between ${
+                                    req.status === s
+                                      ? 'bg-[#f5ece7] text-[#a9674d] font-semibold'
+                                      : 'text-gray-700 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  {s}
+                                  {req.status === s && (
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                      <path d="M20 6L9 17l-5-5" />
+                                    </svg>
+                                  )}
+                                </button>
+                              ))}
+                            </motion.div>
+                          </>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Stepper progress indicator capsule */}
+            <div className="bg-gray-100 rounded-full p-1 flex items-center gap-0.5 border border-gray-200">
+              {STATUSES.map(s => {
+                const isActive = req.status === s;
+                return (
+                  <button
+                    key={s}
+                    onClick={() => setStatus(s)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                      isActive
+                        ? 'bg-white text-[#a9674d] border-2 border-black font-bold shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </div>

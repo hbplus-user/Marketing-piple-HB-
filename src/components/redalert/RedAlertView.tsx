@@ -1,8 +1,10 @@
+
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { ArrowUpDown, Download, Edit2 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { daysToDeadline, getUrgency } from '../../utils/deadlineUtils';
+import { canEditPostDate } from '../../utils/permissions';
 import Badge from '../shared/Badge';
 import { USERS } from '../../data/mockData';
 import type { ContentRequest } from '../../types';
@@ -59,20 +61,20 @@ export default function RedAlertView() {
   };
 
   const urgencyColor: Record<string, string> = {
-    'overdue':  '#EF4444',
-    'urgent':   '#F59E0B',
-    'due-soon': '#8B5CF6',
-    'on-track': '#10B981',
+    'overdue':  '#9f4022',
+    'urgent':   '#c99d5d',
+    'due-soon': '#747440',
+    'on-track': '#6f8e7c',
   };
 
   return (
     <div className="flex flex-col h-full px-6 py-4 gap-5">
       {/* KPI tiles */}
       <div className="grid grid-cols-4 gap-4">
-        <KPITile label="Overdue" value={overdue} color="#DC2626" bg="#FEF2F2" />
-        <KPITile label="Due within 48h" value={within48h} color="#D97706" bg="#FFFBEB" />
-        <KPITile label="On track" value={onTrack} color="#4F46E5" bg="#EEF2FF" />
-        <KPITile label="Shipped this cycle" value={shipped} color="#059669" bg="#ECFDF5" />
+        <KPITile label="Overdue" value={overdue} color="#9f4022" bg="#fdf2ee" />
+        <KPITile label="Due within 48h" value={within48h} color="#8a4f39" bg="#f5ece7" />
+        <KPITile label="On track" value={onTrack} color="#344161" bg="#e8ebf1" />
+        <KPITile label="Shipped this cycle" value={shipped} color="#4a6b5c" bg="#edf2ef" />
       </div>
 
       {/* Table */}
@@ -92,7 +94,7 @@ export default function RedAlertView() {
                   { key: 'id', label: 'Request ID' },
                   { key: 'title', label: 'Title' },
                   { key: 'pipeline', label: 'Pipeline' },
-                  { key: 'assigneeId', label: 'Owner' },
+                  { key: 'ownerId', label: 'Owner' },
                   { key: 'internalDeadline', label: 'Urgency' },
                   { key: 'postDate', label: 'Post Date' },
                 ].map(col => (
@@ -115,7 +117,7 @@ export default function RedAlertView() {
                 const days = daysToDeadline(req.internalDeadline);
                 const urgencyPct = req.status === 'Done' ? 100 :
                   Math.max(0, Math.min(100, ((req.daysNeeded - days) / req.daysNeeded) * 100));
-                const owner = USERS.find(u => u.id === req.assigneeId);
+                const owner = USERS.find(u => u.id === req.ownerId);
                 const color = urgencyColor[urgency];
 
                 return (
@@ -140,7 +142,7 @@ export default function RedAlertView() {
                     <td className="px-5 py-3">
                       <div className="flex items-center gap-2">
                         <span className="text-[12px] text-gray-600">{format(req.postDate, 'MMM d, yyyy')}</span>
-                        {currentUser.role === 'manager' && (
+                        {canEditPostDate(currentUser.role, req, currentUser.id) && (
                           <button
                             onClick={() => openModal({ type: 'edit-post-date', requestId: req.id })}
                             className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"

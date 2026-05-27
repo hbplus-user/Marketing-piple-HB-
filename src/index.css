@@ -1,27 +1,36 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
 @import "tailwindcss";
 
 :root {
-  --color-brand:        #4F46E5;
-  --color-brand-light:  #EEF2FF;
-  --color-brand-dark:   #3730A3;
-  --color-sidebar-bg:   #1E1B4B;
-  --color-sidebar-text: #C7D2FE;
-  --color-sidebar-muted:#6B7280;
-  --color-bg:           #F8F9FB;
+  /* Brand accent – terracotta */
+  --color-brand:        #a9674d;
+  --color-brand-light:  #f5ece7;
+  --color-brand-dark:   #8a4f39;
+
+  /* Sidebar */
+  --color-sidebar-bg:   #1a1a1a;
+  --color-sidebar-text: #f5f2e9;
+  --color-sidebar-muted:#a89e8e;
+
+  /* App surface */
+  --color-bg:           #f5f2e9;
   --color-surface:      #FFFFFF;
-  --color-border:       #E5E7EB;
-  --color-pm:           #7C3AED;
-  --color-content:      #0EA5E9;
-  --color-art:          #EC4899;
-  --color-events:       #F59E0B;
-  --color-todo:         #6B7280;
-  --color-inprogress:   #3B82F6;
-  --color-inreview:     #8B5CF6;
-  --color-done:         #10B981;
-  --color-urgent:       #EF4444;
-  --color-redalert-bg:  #FEF2F2;
-  --color-redalert-txt: #DC2626;
+  --color-border:       #ede0d0;
+
+  /* Pipeline brand colours */
+  --color-pm:           #344161;
+  --color-content:      #6f8e7c;
+  --color-art:          #a9674d;
+  --color-events:       #c99d5d;
+
+  /* Status */
+  --color-todo:         #888888;
+  --color-inprogress:   #344161;
+  --color-inreview:     #747440;
+  --color-done:         #6f8e7c;
+  --color-urgent:       #9f4022;
+  --color-redalert-bg:  #fdf2ee;
+  --color-redalert-txt: #9f4022;
 }
 
 *, *::before, *::after {
@@ -35,10 +44,16 @@ html, body, #root {
 }
 
 body {
-  font-family: 'Inter', system-ui, sans-serif;
+  /* Gilroy first (if user loads it via CDN/font-face); DM Sans as Google fallback */
+  font-family: 'Gilroy', 'DM Sans', system-ui, sans-serif;
   background: var(--color-bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Display / editorial headings – The Seasons → Cormorant Garamond fallback */
+h1, h2, h3, .font-display {
+  font-family: 'The Seasons', 'Cormorant Garamond', Georgia, serif;
 }
 
 #root {
@@ -50,8 +65,8 @@ body {
   display: block;
 }
 
-/* Scrollbar styling */
+/* Scrollbar */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #9CA3AF; }
+::-webkit-scrollbar-thumb { background: #d4c5b5; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #b8a898; }

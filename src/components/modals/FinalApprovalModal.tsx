@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+﻿import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 import { CheckCircle2 } from 'lucide-react';
 import Modal from '../shared/Modal';
@@ -91,7 +91,7 @@ export default function FinalApprovalModal({ open, requestId }: { open: boolean;
       <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
         <button
           onClick={closeModal}
-          className="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+          className="px-4 py-2 text-sm font-medium bg-[#a9674d] hover:bg-[#8a4f39] text-white rounded-lg transition-colors"
         >
           Done
         </button>

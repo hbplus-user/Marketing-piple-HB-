@@ -7,7 +7,7 @@ interface LoginPageProps {
   onEnterDashboard: () => void;
 }
 
-const orbColours = ['#EA4335', '#FBBC04', '#34A853', '#4285F4'];
+const orbColours = ['#9f4022', '#c99d5d', '#6f8e7c', '#344161'];
 
 export default function LoginPage({ onEnterDashboard }: LoginPageProps) {
   const { signInWithGoogle, authError, session } = useAuth();
@@ -46,10 +46,10 @@ export default function LoginPage({ onEnterDashboard }: LoginPageProps) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'linear-gradient(160deg, #d3e1f7 0%, #e5daf1 50%, #fbd9d3 100%)',
+        background: 'linear-gradient(160deg, #f5f2e9 0%, #ede0d0 55%, #e2cfc0 100%)',
         position: 'relative',
         overflow: 'hidden',
-        fontFamily: "'Plus Jakarta Sans', sans-serif",
+        fontFamily: "'Gilroy', 'DM Sans', system-ui, sans-serif",
       }}
     >
       {/* Dotted grid overlay */}
@@ -57,7 +57,7 @@ export default function LoginPage({ onEnterDashboard }: LoginPageProps) {
         style={{
           position: 'absolute',
           inset: 0,
-          backgroundImage: 'radial-gradient(rgba(40, 36, 60, 0.07) 1.5px, transparent 1.5px)',
+          backgroundImage: 'radial-gradient(rgba(83, 55, 43, 0.07) 1.5px, transparent 1.5px)',
           backgroundSize: '18px 18px',
           pointerEvents: 'none',
         }}
@@ -72,7 +72,7 @@ export default function LoginPage({ onEnterDashboard }: LoginPageProps) {
           width: '420px',
           height: '420px',
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(251,188,4,0.45) 0%, rgba(251,188,4,0) 70%)',
+          background: 'radial-gradient(circle, rgba(201,157,93,0.38) 0%, rgba(201,157,93,0) 70%)',
           pointerEvents: 'none',
         }}
       />
@@ -91,7 +91,7 @@ export default function LoginPage({ onEnterDashboard }: LoginPageProps) {
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
           <circle cx="12" cy="12" r="10" stroke="#0f0e1a" strokeWidth="2.5" strokeDasharray="16 6" />
-          <circle cx="12" cy="12" r="4" fill="#FBBC04" />
+          <circle cx="12" cy="12" r="4" fill="#c99d5d" />
         </svg>
         <span style={{ fontSize: '12px', fontWeight: 800, letterSpacing: '0.12em', color: '#0f0e1a' }}>
           PIPELINE
@@ -245,7 +245,7 @@ export default function LoginPage({ onEnterDashboard }: LoginPageProps) {
               <span
                 style={{
                   fontSize: '12px',
-                  color: '#10b981',
+                  color: '#6f8e7c',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '5px',
@@ -257,7 +257,7 @@ export default function LoginPage({ onEnterDashboard }: LoginPageProps) {
                     width: '6px',
                     height: '6px',
                     borderRadius: '50%',
-                    background: '#10b981',
+                    background: '#6f8e7c',
                     display: 'inline-block',
                   }}
                 />
@@ -266,7 +266,7 @@ export default function LoginPage({ onEnterDashboard }: LoginPageProps) {
               <span
                 style={{
                   fontSize: '12px',
-                  color: '#10b981',
+                  color: '#6f8e7c',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '5px',
@@ -278,7 +278,7 @@ export default function LoginPage({ onEnterDashboard }: LoginPageProps) {
                     width: '6px',
                     height: '6px',
                     borderRadius: '50%',
-                    background: '#10b981',
+                    background: '#6f8e7c',
                     display: 'inline-block',
                   }}
                 />

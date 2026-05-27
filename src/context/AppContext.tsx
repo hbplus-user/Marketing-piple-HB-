@@ -89,7 +89,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       result = result.filter(r =>
         r.requesterId === currentUser.id ||
         r.ownerId === currentUser.id ||
-        r.assigneeId === currentUser.id ||
+        r.assigneeIds.includes(currentUser.id) ||
         r.reviewerIds.includes(currentUser.id)
       );
     }

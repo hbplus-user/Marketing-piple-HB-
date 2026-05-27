@@ -3,9 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   format, addMonths, subMonths, startOfMonth, endOfMonth,
   eachDayOfInterval, startOfWeek, endOfWeek, isSameDay,
-  isSameMonth, isToday, startOfDay, endOfDay,
-  addDays, startOfWeek as startOfThisWeek, endOfWeek as endOfThisWeek,
-  startOfMonth as startOfThisMonth, endOfMonth as endOfThisMonth,
+  isSameMonth, isToday, startOfDay, endOfDay, addDays,
 } from 'date-fns';
 import { CalendarDays, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import type { DateRange } from '../../context/AppContext';
@@ -14,14 +12,6 @@ interface DateRangePickerProps {
   value: DateRange;
   onChange: (range: DateRange) => void;
 }
-
-const PRESETS = [
-  { label: 'Today',      getRange: () => ({ start: startOfDay(new Date()), end: endOfDay(new Date()) }) },
-  { label: 'This Week',  getRange: () => ({ start: startOfThisWeek(new Date(), { weekStartsOn: 1 }), end: endOfThisWeek(new Date(), { weekStartsOn: 1 }) }) },
-  { label: 'This Month', getRange: () => ({ start: startOfThisMonth(new Date()), end: endOfThisMonth(new Date()) }) },
-  { label: 'Next 7 days',getRange: () => ({ start: startOfDay(new Date()), end: endOfDay(addDays(new Date(), 6)) }) },
-  { label: 'Next 30 days',getRange: () => ({ start: startOfDay(new Date()), end: endOfDay(addDays(new Date(), 29)) }) },
-];
 
 const DAY_HEADERS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
@@ -44,10 +34,12 @@ export default function DateRangePicker({ value, onChange }: DateRangePickerProp
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
-  // Sync tempStart when picker opens
   useEffect(() => {
-    if (open) { setTempStart(value.start); setSelecting(value.start ? 'end' : 'start'); }
-  }, [open]);
+    if (open) {
+      setTempStart(value.start);
+      setSelecting(value.start ? 'end' : 'start');
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const monthStart = startOfMonth(month);
   const monthEnd = endOfMonth(month);
@@ -98,13 +90,6 @@ export default function DateRangePicker({ value, onChange }: DateRangePickerProp
     return `${format(value.start, 'MMM d')} – ${format(value.end, 'MMM d')}`;
   };
 
-  const applyPreset = (preset: typeof PRESETS[0]) => {
-    onChange(preset.getRange());
-    setOpen(false);
-    setSelecting('start');
-    setTempStart(null);
-  };
-
   const clearRange = (e: React.MouseEvent) => {
     e.stopPropagation();
     onChange({ start: null, end: null });
@@ -113,19 +98,26 @@ export default function DateRangePicker({ value, onChange }: DateRangePickerProp
   };
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative" style={{ zIndex: 50 }}>
       {/* Trigger */}
       <button
         onClick={() => setOpen(v => !v)}
         className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-all ${
-          hasValue
-            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-            : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-gray-700'
+          hasValue ? 'text-white' : 'text-[#a89e8e] hover:text-[#53372b] hover:border-[#c4b5a4]'
         }`}
+        style={hasValue ? {
+          background: 'linear-gradient(160deg, #c47d61 0%, #8a4f39 100%)',
+          border: '1px solid transparent',
+          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2), 0 3px 10px rgba(169,103,77,0.4)',
+        } : {
+          border: '1px solid #ede0d0',
+          background: 'white',
+          boxShadow: '0 1px 2px rgba(83,55,43,0.06), inset 0 1px 0 rgba(255,255,255,0.8)',
+        }}
         aria-label="Date range filter"
         aria-expanded={open}
       >
-        <CalendarDays size={13} className={hasValue ? 'text-indigo-200' : 'text-gray-400'} />
+        <CalendarDays size={13} className={hasValue ? 'text-[#f5ece7]' : 'text-[#c4b5a4]'} />
         <span>{label() ?? 'Date range'}</span>
         {hasValue && (
           <span
@@ -147,42 +139,40 @@ export default function DateRangePicker({ value, onChange }: DateRangePickerProp
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.15 }}
-            className="absolute top-full mt-2 left-0 z-50 bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden"
-            style={{ width: 320 }}
+            className="absolute top-full mt-2 left-0 z-50 rounded-2xl overflow-hidden"
+            style={{
+              width: 300,
+              background: 'white',
+              boxShadow: '0 4px 24px rgba(83,55,43,0.12), 0 1px 4px rgba(83,55,43,0.08), inset 0 1px 0 rgba(255,255,255,0.9)',
+              border: '1px solid rgba(237,224,208,0.9)',
+            }}
           >
-            {/* Presets */}
-            <div className="px-3 pt-3 pb-2 border-b border-gray-50">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quick select</p>
-              <div className="flex flex-wrap gap-1.5">
-                {PRESETS.map(p => (
-                  <button
-                    key={p.label}
-                    onClick={() => applyPreset(p)}
-                    className="px-2.5 py-1 rounded-full text-[11px] font-medium border border-gray-200 text-gray-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-700 transition-colors"
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Calendar */}
-            <div className="p-3">
+            <div className="p-4">
               {/* Month nav */}
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-4">
                 <button
                   onClick={() => setMonth(subMonths(month, 1))}
-                  className="p-1 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+                  className="w-7 h-7 flex items-center justify-center rounded-lg text-[#a89e8e] transition-all hover:text-[#53372b]"
+                  style={{
+                    background: 'white',
+                    boxShadow: '0 1px 3px rgba(83,55,43,0.09), inset 0 1px 0 rgba(255,255,255,0.9)',
+                    border: '1px solid rgba(237,224,208,0.9)',
+                  }}
                   aria-label="Previous month"
                 >
                   <ChevronLeft size={14} />
                 </button>
-                <span className="text-[13px] font-semibold text-gray-800">
+                <span className="font-display text-[14px] font-bold text-[#1a1a1a]">
                   {format(month, 'MMMM yyyy')}
                 </span>
                 <button
                   onClick={() => setMonth(addMonths(month, 1))}
-                  className="p-1 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors"
+                  className="w-7 h-7 flex items-center justify-center rounded-lg text-[#a89e8e] transition-all hover:text-[#53372b]"
+                  style={{
+                    background: 'white',
+                    boxShadow: '0 1px 3px rgba(83,55,43,0.09), inset 0 1px 0 rgba(255,255,255,0.9)',
+                    border: '1px solid rgba(237,224,208,0.9)',
+                  }}
                   aria-label="Next month"
                 >
                   <ChevronRight size={14} />
@@ -192,44 +182,51 @@ export default function DateRangePicker({ value, onChange }: DateRangePickerProp
               {/* Day headers */}
               <div className="grid grid-cols-7 mb-1">
                 {DAY_HEADERS.map(d => (
-                  <div key={d} className="text-[10px] font-semibold text-gray-400 text-center py-1">
+                  <div key={d} className="text-[10px] font-bold text-[#c4b5a4] text-center py-1 uppercase tracking-wider">
                     {d}
                   </div>
                 ))}
               </div>
 
               {/* Day cells */}
-              <div className="grid grid-cols-7">
+              <div className="grid grid-cols-7 gap-y-0.5">
                 {days.map(day => {
                   const inRange = isInRange(day);
                   const rangeStart = isRangeStart(day);
                   const rangeEnd = isRangeEnd(day);
-                  const today = isToday(day);
+                  const todayDay = isToday(day);
                   const inMonth = isSameMonth(day, month);
                   const isSelected = rangeStart || rangeEnd;
 
                   return (
                     <div
                       key={day.toISOString()}
-                      className={`relative flex items-center justify-center ${inRange ? 'bg-indigo-50' : ''} ${
-                        rangeStart ? 'rounded-l-full' : ''
-                      } ${rangeEnd ? 'rounded-r-full' : ''} ${
+                      className={`relative flex items-center justify-center ${inRange ? '' : ''} ${
+                        rangeStart && !rangeEnd ? 'rounded-l-full' : ''
+                      } ${rangeEnd && !rangeStart ? 'rounded-r-full' : ''} ${
                         rangeStart && rangeEnd ? 'rounded-full' : ''
                       }`}
+                      style={inRange ? { background: '#f5ece7' } : {}}
                     >
                       <button
                         onClick={() => handleDayClick(day)}
                         onMouseEnter={() => selecting === 'end' && setHoverDay(day)}
                         onMouseLeave={() => setHoverDay(null)}
-                        className={`w-8 h-8 text-[12px] font-medium rounded-full flex items-center justify-center transition-all
-                          ${isSelected
-                            ? 'bg-indigo-600 text-white shadow-sm'
-                            : today
-                              ? 'border border-indigo-400 text-indigo-600'
+                        className={`w-8 h-8 text-[12px] font-semibold rounded-full flex items-center justify-center transition-all ${
+                          isSelected
+                            ? 'text-white'
+                            : todayDay
+                              ? 'text-[#a9674d]'
                               : inMonth
-                                ? 'text-gray-700 hover:bg-indigo-100 hover:text-indigo-700'
-                                : 'text-gray-300 hover:bg-gray-100'
-                          }`}
+                                ? 'text-[#53372b] hover:bg-[#f5ece7] hover:text-[#a9674d]'
+                                : 'text-[#c4b5a4] hover:bg-[#f5f2e9]'
+                        }`}
+                        style={isSelected ? {
+                          background: 'linear-gradient(160deg, #c47d61 0%, #8a4f39 100%)',
+                          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.22), 0 2px 8px rgba(169,103,77,0.45)',
+                        } : todayDay ? {
+                          border: '1.5px solid #a9674d',
+                        } : {}}
                         aria-label={format(day, 'MMM d, yyyy')}
                         aria-pressed={isSelected}
                       >
@@ -241,11 +238,47 @@ export default function DateRangePicker({ value, onChange }: DateRangePickerProp
               </div>
 
               {/* Hint */}
-              <p className="text-[11px] text-gray-400 text-center mt-3">
+              <p className="text-[11px] text-[#c4b5a4] text-center mt-3 font-medium">
                 {selecting === 'start' || !tempStart
                   ? 'Click to set start date'
                   : `Start: ${format(tempStart, 'MMM d')} — click to set end date`}
               </p>
+
+              {/* Quick picks */}
+              <div className="flex gap-2 mt-3 pt-3 border-t" style={{ borderColor: '#ede0d0' }}>
+                {[
+                  {
+                    label: 'This Week',
+                    getRange: () => ({
+                      start: startOfDay(startOfWeek(new Date(), { weekStartsOn: 1 })),
+                      end: endOfDay(addDays(startOfWeek(new Date(), { weekStartsOn: 1 }), 6)),
+                    }),
+                  },
+                  {
+                    label: 'Next 30 days',
+                    getRange: () => ({
+                      start: startOfDay(new Date()),
+                      end: endOfDay(addDays(new Date(), 29)),
+                    }),
+                  },
+                ].map(p => (
+                  <button
+                    key={p.label}
+                    onClick={() => {
+                      onChange(p.getRange());
+                      setOpen(false);
+                      setSelecting('start');
+                      setTempStart(null);
+                    }}
+                    className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-colors"
+                    style={{ color: '#a9674d', background: '#f5ece7' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#f0e3db')}
+                    onMouseLeave={e => (e.currentTarget.style.background = '#f5ece7')}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </motion.div>
         )}

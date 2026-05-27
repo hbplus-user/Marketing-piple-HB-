@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import {
   LayoutGrid, Calendar, GanttChartSquare, AlertTriangle,
-  CheckSquare, Inbox, Circle, DatabaseBackup, LogOut,
+  CheckSquare, Inbox, DatabaseBackup, LogOut,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useRedAlert } from '../../hooks/useRedAlert';
@@ -17,10 +17,10 @@ const VIEWS: { id: View; label: string; icon: React.ElementType }[] = [
 ];
 
 const PIPELINE_COLORS: Record<string, string> = {
-  'PM':          '#7C3AED',
-  'Content':     '#0EA5E9',
-  'Art / Design':'#EC4899',
-  'Events':      '#F59E0B',
+  'PM':          '#344161',
+  'Content':     '#6f8e7c',
+  'Art / Design':'#a9674d',
+  'Events':      '#c99d5d',
 };
 
 export default function Sidebar() {
@@ -35,13 +35,13 @@ export default function Sidebar() {
   }));
 
   const myTasksCount = requests.filter(r =>
-    (r.assigneeId === currentUser.id || r.requesterId === currentUser.id) && r.status !== 'Done'
+    (r.assigneeIds.includes(currentUser.id) || r.requesterId === currentUser.id) && r.status !== 'Done'
   ).length;
 
-  const pendingApprovalCount = requests.filter(r => r.status === 'To Do' && r.assigneeId === null).length;
+  const pendingApprovalCount = requests.filter(r => r.status === 'To Do' && r.assigneeIds.length === 0).length;
 
   return (
-    <aside className="w-60 flex-shrink-0 flex flex-col h-full" style={{ backgroundColor: '#1E1B4B' }}>
+    <aside className="w-60 flex-shrink-0 flex flex-col h-full" style={{ backgroundColor: '#1a1a1a' }}>
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-white/5">
         <img
@@ -51,8 +51,8 @@ export default function Sidebar() {
           style={{ background: 'white' }}
         />
         <div>
-          <p className="text-[13px] font-bold text-white leading-tight">HB+</p>
-          <p className="text-[10px] text-indigo-300 leading-tight">Marketing Ops</p>
+          <p className="font-display text-[14px] font-bold text-[#f5f2e9] leading-tight tracking-wide">HB+</p>
+          <p className="text-[10px] text-[#a89e8e] leading-tight">Marketing Ops</p>
         </div>
       </div>
 
@@ -60,36 +60,47 @@ export default function Sidebar() {
       {currentUser.role === 'manager' && (
         <div className="px-3 pt-4 space-y-1">
           <motion.button
-            whileHover={{ scale: 1.01 }}
+            whileHover={{ scale: 1.01, y: -1 }}
+            whileTap={{ scale: 0.98, y: 0 }}
             onClick={() => openModal({ type: 'approval-queue' })}
-            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 transition-colors"
+            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-colors"
+            style={{
+              background: 'rgba(255,255,255,0.05)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 6px rgba(0,0,0,0.2)',
+            }}
             aria-label="Open approval queue"
           >
             <div className="flex items-center gap-2.5">
-              <Inbox size={15} className="text-indigo-300" />
-              <span className="text-[13px] font-medium text-indigo-200">Approval Queue</span>
+              <Inbox size={15} className="text-[#c4a98a]" />
+              <span className="text-[13px] font-medium text-[#d4c5b0]">Approval Queue</span>
             </div>
             {pendingApprovalCount > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-500 text-white min-w-[18px] text-center">
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-[#9f4022] text-white min-w-[18px] text-center"
+                style={{ boxShadow: '0 1px 4px rgba(159,64,34,0.5)' }}>
                 {pendingApprovalCount}
               </span>
             )}
           </motion.button>
           <motion.button
-            whileHover={{ scale: 1.01 }}
+            whileHover={{ scale: 1.01, y: -1 }}
+            whileTap={{ scale: 0.98, y: 0 }}
             onClick={() => openModal({ type: 'backup-restore' })}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 transition-colors"
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-colors"
+            style={{
+              background: 'rgba(255,255,255,0.05)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 6px rgba(0,0,0,0.2)',
+            }}
             aria-label="Open backup and restore"
           >
-            <DatabaseBackup size={15} className="text-indigo-300" />
-            <span className="text-[13px] font-medium text-indigo-200">Backup & Restore</span>
+            <DatabaseBackup size={15} className="text-[#c4a98a]" />
+            <span className="text-[13px] font-medium text-[#d4c5b0]">Backup & Restore</span>
           </motion.button>
         </div>
       )}
 
       {/* Views */}
       <div className="px-3 pt-5 flex-1 overflow-y-auto">
-        <p className="px-2 mb-2 text-[10px] font-semibold text-indigo-400 uppercase tracking-widest">Views</p>
+        <p className="px-2 mb-2 text-[10px] font-semibold text-[#a89e8e] uppercase tracking-widest">Views</p>
         <nav className="space-y-0.5">
           {VIEWS.map(view => {
             const active = activeView === view.id;
@@ -98,13 +109,16 @@ export default function Sidebar() {
             return (
               <motion.button
                 key={view.id}
-                whileHover={{ scale: 1.01, opacity: 0.9 }}
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.98 }}
                 onClick={() => setActiveView(view.id)}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left transition-colors ${
-                  active
-                    ? 'bg-indigo-600 text-white'
-                    : 'text-indigo-300 hover:bg-white/5'
+                  active ? 'text-white' : 'text-[#a89e8e] hover:bg-white/5 hover:text-[#f5f2e9]'
                 }`}
+                style={active ? {
+                  background: 'linear-gradient(135deg, #c47d61 0%, #8a4f39 100%)',
+                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18), 0 4px 12px rgba(169,103,77,0.4), 0 2px 4px rgba(0,0,0,0.25)',
+                } : {}}
                 aria-current={active ? 'page' : undefined}
                 aria-label={view.label}
               >
@@ -114,8 +128,9 @@ export default function Sidebar() {
                 </div>
                 {badge > 0 && (
                   <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold min-w-[18px] text-center ${
-                    view.id === 'redalert' ? 'bg-red-500 text-white' : 'bg-indigo-500 text-white'
-                  }`}>
+                    view.id === 'redalert' ? 'bg-[#9f4022] text-white' : 'bg-[#a9674d] text-white'
+                  }`}
+                    style={{ boxShadow: view.id === 'redalert' ? '0 1px 4px rgba(159,64,34,0.5)' : '0 1px 4px rgba(169,103,77,0.5)' }}>
                     {badge}
                   </span>
                 )}
@@ -125,7 +140,7 @@ export default function Sidebar() {
         </nav>
 
         {/* Product pipeline */}
-        <p className="px-2 mt-6 mb-2 text-[10px] font-semibold text-indigo-400 uppercase tracking-widest">Product Pipeline</p>
+        <p className="px-2 mt-6 mb-2 text-[10px] font-semibold text-[#a89e8e] uppercase tracking-widest">Product Pipeline</p>
         <div className="space-y-0.5">
           {pipelineCounts.map(p => {
             const isActive = activePipelines.includes(p.name as never);
@@ -137,22 +152,32 @@ export default function Sidebar() {
                 className={`w-full flex items-center justify-between px-3 py-2 rounded-xl transition-colors text-left ${
                   isActive ? 'bg-white/10' : 'hover:bg-white/5'
                 }`}
-                title={`Filter by ${p.name} — sorted overdue first`}
+                style={isActive ? {
+                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 1px 3px rgba(0,0,0,0.2)',
+                } : {}}
+                title={`Filter by ${p.name}`}
               >
                 <div className="flex items-center gap-2.5">
-                  <Circle
-                    size={8}
-                    fill={p.color}
-                    color={p.color}
-                    className={isActive ? 'drop-shadow-[0_0_4px_var(--tw-shadow-color)]' : ''}
-                    style={isActive ? { filter: `drop-shadow(0 0 4px ${p.color})` } : {}}
+                  {/* 3D sphere dot */}
+                  <span
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: '50%',
+                      flexShrink: 0,
+                      display: 'inline-block',
+                      background: `radial-gradient(circle at 36% 33%, rgba(255,255,255,0.9) 0%, ${p.color} 44%)`,
+                      boxShadow: isActive
+                        ? `0 0 10px ${p.color}90, 0 1px 3px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.5)`
+                        : `0 1px 3px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.4)`,
+                    }}
                   />
-                  <span className={`text-[13px] font-medium transition-colors ${isActive ? 'text-white' : 'text-indigo-300'}`}>
+                  <span className={`text-[13px] font-medium transition-colors ${isActive ? 'text-white' : 'text-[#c4b9a8]'}`}>
                     {p.name}
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className={`text-[11px] font-medium transition-colors ${isActive ? 'text-white' : 'text-indigo-400'}`}>
+                  <span className={`text-[11px] font-medium transition-colors ${isActive ? 'text-white' : 'text-[#a89e8e]'}`}>
                     {p.count}
                   </span>
                   {isActive && (
@@ -169,7 +194,7 @@ export default function Sidebar() {
       <div className="px-3 pb-3 border-t border-white/5 pt-3">
         <button
           onClick={signOut}
-          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors"
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[#c4a98a] hover:bg-white/5 hover:text-[#d4c5b0] transition-colors"
           aria-label="Log out"
         >
           <LogOut size={14} />

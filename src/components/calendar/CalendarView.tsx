@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   startOfMonth, endOfMonth, eachDayOfInterval, isSameDay,
   isSameMonth, addMonths, subMonths, format, startOfWeek, endOfWeek,
@@ -9,9 +9,16 @@ import { pipelineConfig } from '../shared/Badge';
 import { isRedAlert } from '../../utils/deadlineUtils';
 
 export default function CalendarView() {
-  const { filteredRequests: requests, openModal } = useApp();
+  const { filteredRequests: requests, openModal, dateRange } = useApp();
   const [current, setCurrent] = useState(new Date());
   const today = new Date();
+
+  // Auto-navigate to the month of the date range filter start
+  useEffect(() => {
+    if (dateRange.start) {
+      setCurrent(dateRange.start);
+    }
+  }, [dateRange.start]);
 
   const monthStart = startOfMonth(current);
   const monthEnd = endOfMonth(current);
@@ -25,9 +32,16 @@ export default function CalendarView() {
     <div className="flex flex-col h-full px-6 py-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-bold text-gray-900">
-          {format(current, 'MMMM yyyy')}
-        </h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-bold text-gray-900">
+            {format(current, 'MMMM yyyy')}
+          </h2>
+          {dateRange.start && (
+            <span className="text-[11px] text-indigo-500 font-medium bg-indigo-50 px-2 py-0.5 rounded-full">
+              Filtered view
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setCurrent(subMonths(current, 1))}

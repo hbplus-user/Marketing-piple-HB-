@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { format, addDays } from 'date-fns';
 import { AlertTriangle, CheckCircle, Link, Plus, X } from 'lucide-react';
 import Modal from '../shared/Modal';
@@ -22,8 +22,9 @@ export default function NewRequestModal({ open }: { open: boolean }) {
   const [brief, setBrief]         = useState('');
   const [pipeline, setPipeline]   = useState<Pipeline | null>(null);
   const [postDate, setPostDate]   = useState('');
+  const [internalDeadlineStr, setInternalDeadlineStr] = useState('');
   const [daysNeeded, setDaysNeeded] = useState(3);
-  const [assigneeId, setAssigneeId] = useState<string | null>(null);
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [linkInput, setLinkInput]   = useState('');
   const [referenceLinks, setReferenceLinks] = useState<string[]>([]);
 
@@ -36,23 +37,37 @@ export default function NewRequestModal({ open }: { open: boolean }) {
 
   const removeLink = (url: string) => setReferenceLinks(prev => prev.filter(l => l !== url));
 
+  const toggleAssignee = (id: string) =>
+    setAssigneeIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
   const manager = USERS.find(u => u.role === 'manager')!;
-  // Assignable users: everyone except the manager (who auto-joins as reviewer)
   const assignableUsers = USERS.filter(u => u.role !== 'manager');
 
-  const postDateObj      = postDate ? new Date(postDate) : null;
-  const internalDeadline = postDateObj ? calcInternalDeadline(postDateObj) : null;
-  const dtd              = internalDeadline ? daysToDeadline(internalDeadline) : null;
-  const showRedAlert     = dtd !== null && dtd < daysNeeded;
+  const postDateObj = postDate ? new Date(postDate) : null;
+
+  useEffect(() => {
+    if (postDateObj) {
+      setInternalDeadlineStr(format(calcInternalDeadline(postDateObj), 'yyyy-MM-dd'));
+    } else {
+      setInternalDeadlineStr('');
+    }
+  }, [postDate]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const internalDeadline = internalDeadlineStr ? new Date(internalDeadlineStr) : null;
+  const autoDeadline     = postDateObj ? calcInternalDeadline(postDateObj) : null;
+  const isAuto           = !!autoDeadline && !!internalDeadlineStr &&
+                           format(autoDeadline, 'yyyy-MM-dd') === internalDeadlineStr;
+  const dtd          = internalDeadline ? daysToDeadline(internalDeadline) : null;
+  const showRedAlert = dtd !== null && dtd < daysNeeded;
 
   const reset = () => {
     setTitle(''); setBrief(''); setPipeline(null);
-    setPostDate(''); setDaysNeeded(3); setAssigneeId(null);
-    setLinkInput(''); setReferenceLinks([]);
+    setPostDate(''); setInternalDeadlineStr(''); setDaysNeeded(3);
+    setAssigneeIds([]); setLinkInput(''); setReferenceLinks([]);
   };
 
   const handleSubmit = () => {
-    if (!title || !pipeline || !postDateObj) return;
+    if (!title || !pipeline || !postDateObj || !internalDeadline) return;
     const id = `REQ-${Math.floor(Math.random() * 900) + 100}`;
     addRequest({
       id,
@@ -62,10 +77,10 @@ export default function NewRequestModal({ open }: { open: boolean }) {
       status: 'To Do',
       requesterId: currentUser.id,
       ownerId: currentUser.role === 'manager' ? currentUser.id : manager.id,
-      assigneeId,
+      assigneeIds,
       reviewerIds: [manager.id],
       postDate: postDateObj,
-      internalDeadline: internalDeadline!,
+      internalDeadline: internalDeadline,
       daysNeeded,
       rounds: [{ round: 0, comments: [], status: 'pending' }],
       currentRound: 0,
@@ -81,6 +96,8 @@ export default function NewRequestModal({ open }: { open: boolean }) {
     closeModal();
   };
 
+  const isMeSelected = assigneeIds.includes(currentUser.id);
+
   return (
     <Modal open={open} onClose={() => { reset(); closeModal(); }} title="New content request" size="lg">
       <div className="px-6 py-5 space-y-5">
@@ -92,8 +109,8 @@ export default function NewRequestModal({ open }: { open: boolean }) {
             type="text"
             value={title}
             onChange={e => setTitle(e.target.value)}
-            placeholder="e.g. Q4 Webinar — Launch promo kit"
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+            placeholder="e.g. Q4 Webinar â€” Launch promo kit"
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
           />
         </div>
 
@@ -105,7 +122,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
             onChange={e => setBrief(e.target.value)}
             rows={3}
             placeholder="What needs to be made? Where will it run? Any references or constraints?"
-            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 resize-none"
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d] resize-none"
           />
           <p className="text-[11px] text-gray-400 mt-1">Markdown supported. Attach files after creating the request.</p>
         </div>
@@ -122,14 +139,14 @@ export default function NewRequestModal({ open }: { open: boolean }) {
                 onChange={e => setLinkInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLink(); } }}
                 placeholder="https://example.com/reference"
-                className="w-full pl-7 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+                className="w-full pl-7 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
               />
             </div>
             <button
               type="button"
               onClick={addLink}
               disabled={!linkInput.trim()}
-              className="flex items-center gap-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-200 disabled:text-gray-400 text-white text-xs font-medium transition-colors"
+              className="flex items-center gap-1 px-3 py-2 rounded-lg bg-[#a9674d] hover:bg-[#8a4f39] disabled:bg-gray-200 disabled:text-gray-400 text-white text-xs font-medium transition-colors"
             >
               <Plus size={13} />
               Add
@@ -138,7 +155,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
           {referenceLinks.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {referenceLinks.map(url => (
-                <span key={url} className="flex items-center gap-1.5 px-2 py-1 bg-indigo-50 border border-indigo-100 rounded-lg text-[11px] text-indigo-700 max-w-full">
+                <span key={url} className="flex items-center gap-1.5 px-2 py-1 bg-[#f5ece7] border border-[#f5ece7] rounded-lg text-[11px] text-[#8a4f39] max-w-full">
                   <Link size={10} className="flex-shrink-0" />
                   <span className="truncate max-w-[220px]">{url}</span>
                   <button type="button" onClick={() => removeLink(url)} className="flex-shrink-0 hover:text-red-500 transition-colors">
@@ -160,7 +177,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
                 onClick={() => setPipeline(p.value)}
                 className={`flex items-start gap-3 p-3 rounded-xl border-2 text-left transition-all ${
                   pipeline === p.value
-                    ? 'border-indigo-500 bg-indigo-50'
+                    ? 'border-indigo-500 bg-[#f5ece7]'
                     : 'border-gray-200 hover:border-gray-300 bg-white'
                 }`}
               >
@@ -183,17 +200,25 @@ export default function NewRequestModal({ open }: { open: boolean }) {
               value={postDate}
               onChange={e => setPostDate(e.target.value)}
               min={format(addDays(new Date(), 1), 'yyyy-MM-dd')}
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
             />
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5">
               Internal deadline
-              <span className="ml-2 text-indigo-500 font-normal text-[11px]">Auto: T-5</span>
+              {isAuto
+                ? <span className="ml-2 text-[#c47d61] font-normal text-[11px]">Auto: T-5</span>
+                : internalDeadlineStr
+                  ? <span className="ml-2 text-amber-500 font-normal text-[11px]">Custom</span>
+                  : null}
             </label>
-            <div className="px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg text-gray-500">
-              {internalDeadline ? format(internalDeadline, 'MM/dd/yyyy') : '—'}
-            </div>
+            <input
+              type="date"
+              value={internalDeadlineStr}
+              onChange={e => setInternalDeadlineStr(e.target.value)}
+              max={postDate || undefined}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
+            />
           </div>
         </div>
 
@@ -201,7 +226,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="text-xs font-semibold text-gray-600">Estimated days needed to create</label>
-            <span className="text-xs font-semibold text-indigo-600">{daysNeeded} days</span>
+            <span className="text-xs font-semibold text-[#a9674d]">{daysNeeded} days</span>
           </div>
           <input
             type="range"
@@ -218,63 +243,68 @@ export default function NewRequestModal({ open }: { open: boolean }) {
           </div>
         </div>
 
-        {/* Assignee */}
+        {/* Assignees â€” multi-select */}
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-2">
-            Assignee
-            <span className="ml-1.5 text-gray-400 font-normal">— who will work on this</span>
+            Assignees
+            <span className="ml-1.5 text-gray-400 font-normal">â€” select one or more</span>
+            {assigneeIds.length > 0 && (
+              <span className="ml-2 px-1.5 py-0.5 rounded-full bg-[#f0ddd5] text-[#8a4f39] text-[10px] font-bold">
+                {assigneeIds.length} selected
+              </span>
+            )}
           </label>
           <div className="flex items-center gap-2 flex-wrap">
 
-            {/* ── Assign to me quick-action ── */}
+            {/* Assign to me */}
             <button
-              onClick={() => setAssigneeId(assigneeId === currentUser.id ? null : currentUser.id)}
+              onClick={() => toggleAssignee(currentUser.id)}
               className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full border text-xs font-medium transition-all ${
-                assigneeId === currentUser.id
+                isMeSelected
                   ? 'border-green-400 bg-green-50 text-green-700'
-                  : 'border-dashed border-gray-300 bg-white text-gray-500 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600'
+                  : 'border-dashed border-gray-300 bg-white text-gray-500 hover:border-indigo-300 hover:bg-[#f5ece7] hover:text-[#a9674d]'
               }`}
             >
               <Avatar initials={currentUser.initials} color={currentUser.avatarColor} size="sm" />
               <span>Assign to me</span>
-              {assigneeId === currentUser.id && <CheckCircle size={12} className="text-green-500 ml-0.5" />}
+              {isMeSelected && <CheckCircle size={12} className="text-green-500 ml-0.5" />}
             </button>
 
-            {/* divider */}
             <span className="text-gray-200 select-none">|</span>
 
             {assignableUsers
-              .filter(u => u.id !== currentUser.id)   // don't duplicate the current user
+              .filter(u => u.id !== currentUser.id)
               .map(u => {
-                const selected = assigneeId === u.id;
+                const selected = assigneeIds.includes(u.id);
                 return (
                   <button
                     key={u.id}
-                    onClick={() => setAssigneeId(selected ? null : u.id)}
+                    onClick={() => toggleAssignee(u.id)}
                     className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full border text-xs font-medium transition-all ${
                       selected
-                        ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
+                        ? 'border-[#a9674d] bg-[#f5ece7] text-[#8a4f39]'
                         : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
                     }`}
                   >
                     <Avatar initials={u.initials} color={u.avatarColor} size="sm" />
                     <span>{u.name}</span>
-                    <span className={`capitalize text-[10px] ${selected ? 'text-indigo-400' : 'text-gray-400'}`}>
+                    <span className={`capitalize text-[10px] ${selected ? 'text-[#c4a98a]' : 'text-gray-400'}`}>
                       {u.role}
                     </span>
-                    {selected && <CheckCircle size={12} className="text-indigo-500 ml-0.5" />}
+                    {selected && <CheckCircle size={12} className="text-[#c47d61] ml-0.5" />}
                   </button>
                 );
               })}
           </div>
-          {!assigneeId && (
+
+          {assigneeIds.length === 0 && (
             <p className="text-[11px] text-gray-400 mt-1.5">
-              Optional — can be assigned later from the task view.
+              Optional â€” can be assigned later from the task view.
             </p>
           )}
-          {assigneeId === currentUser.id && (
+          {isMeSelected && (
             <p className="text-[11px] text-green-600 mt-1.5 font-medium">
-              ✓ This task will appear in your My Tasks section.
+              âœ“ This task will appear in your My Tasks section.
             </p>
           )}
         </div>
@@ -309,7 +339,6 @@ export default function NewRequestModal({ open }: { open: boolean }) {
 
       {/* Footer */}
       <div className="px-6 py-4 border-t border-gray-100 flex items-center gap-3">
-        {/* Auto-fetched requester */}
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <Avatar initials={currentUser.initials} color={currentUser.avatarColor} size="sm" />
           <span className="text-[12px] text-gray-500 truncate">
@@ -330,7 +359,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
           <button
             onClick={handleSubmit}
             disabled={!title || !pipeline || !postDate}
-            className="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-200 disabled:text-gray-400 text-white rounded-lg transition-colors"
+            className="px-4 py-2 text-sm font-medium bg-[#a9674d] hover:bg-[#8a4f39] disabled:bg-gray-200 disabled:text-gray-400 text-white rounded-lg transition-colors"
           >
             Submit request
           </button>

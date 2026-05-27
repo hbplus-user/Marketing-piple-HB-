@@ -1,10 +1,10 @@
 import type { Pipeline } from '../../types';
 
 const pipelineConfig: Record<Pipeline, { bg: string; text: string; dot: string }> = {
-  'PM': { bg: '#F5F3FF', text: '#7C3AED', dot: '#7C3AED' },
-  'Content': { bg: '#F0F9FF', text: '#0EA5E9', dot: '#0EA5E9' },
-  'Art / Design': { bg: '#FDF2F8', text: '#EC4899', dot: '#EC4899' },
-  'Events': { bg: '#FFFBEB', text: '#F59E0B', dot: '#F59E0B' },
+  'PM':          { bg: '#e8ebf1', text: '#344161', dot: '#344161' },
+  'Content':     { bg: '#edf2ef', text: '#4a6b5c', dot: '#6f8e7c' },
+  'Art / Design':{ bg: '#f5ece7', text: '#a9674d', dot: '#a9674d' },
+  'Events':      { bg: '#f7f1e3', text: '#9a7336', dot: '#c99d5d' },
 };
 
 interface BadgeProps {
