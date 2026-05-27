@@ -61,9 +61,9 @@ export default function NewRequestModal({ open }: { open: boolean }) {
       pipeline,
       status: 'To Do',
       requesterId: currentUser.id,
-      ownerId: currentUser.id,               // creator is default sole approver
+      ownerId: currentUser.role === 'manager' ? currentUser.id : manager.id,
       assigneeId,
-      reviewerIds: [manager.id],             // manager always present
+      reviewerIds: [manager.id],
       postDate: postDateObj,
       internalDeadline: internalDeadline!,
       daysNeeded,
@@ -225,42 +225,73 @@ export default function NewRequestModal({ open }: { open: boolean }) {
             <span className="ml-1.5 text-gray-400 font-normal">— who will work on this</span>
           </label>
           <div className="flex items-center gap-2 flex-wrap">
-            {assignableUsers.map(u => {
-              const selected = assigneeId === u.id;
-              return (
-                <button
-                  key={u.id}
-                  onClick={() => setAssigneeId(selected ? null : u.id)}
-                  className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full border text-xs font-medium transition-all ${
-                    selected
-                      ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
-                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
-                  }`}
-                >
-                  <Avatar initials={u.initials} color={u.avatarColor} size="sm" />
-                  <span>{u.name}</span>
-                  <span className={`capitalize text-[10px] ${selected ? 'text-indigo-400' : 'text-gray-400'}`}>
-                    {u.role}
-                  </span>
-                  {selected && <CheckCircle size={12} className="text-indigo-500 ml-0.5" />}
-                </button>
-              );
-            })}
+
+            {/* ── Assign to me quick-action ── */}
+            <button
+              onClick={() => setAssigneeId(assigneeId === currentUser.id ? null : currentUser.id)}
+              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                assigneeId === currentUser.id
+                  ? 'border-green-400 bg-green-50 text-green-700'
+                  : 'border-dashed border-gray-300 bg-white text-gray-500 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600'
+              }`}
+            >
+              <Avatar initials={currentUser.initials} color={currentUser.avatarColor} size="sm" />
+              <span>Assign to me</span>
+              {assigneeId === currentUser.id && <CheckCircle size={12} className="text-green-500 ml-0.5" />}
+            </button>
+
+            {/* divider */}
+            <span className="text-gray-200 select-none">|</span>
+
+            {assignableUsers
+              .filter(u => u.id !== currentUser.id)   // don't duplicate the current user
+              .map(u => {
+                const selected = assigneeId === u.id;
+                return (
+                  <button
+                    key={u.id}
+                    onClick={() => setAssigneeId(selected ? null : u.id)}
+                    className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                      selected
+                        ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    <Avatar initials={u.initials} color={u.avatarColor} size="sm" />
+                    <span>{u.name}</span>
+                    <span className={`capitalize text-[10px] ${selected ? 'text-indigo-400' : 'text-gray-400'}`}>
+                      {u.role}
+                    </span>
+                    {selected && <CheckCircle size={12} className="text-indigo-500 ml-0.5" />}
+                  </button>
+                );
+              })}
           </div>
           {!assigneeId && (
             <p className="text-[11px] text-gray-400 mt-1.5">
               Optional — can be assigned later from the task view.
             </p>
           )}
+          {assigneeId === currentUser.id && (
+            <p className="text-[11px] text-green-600 mt-1.5 font-medium">
+              ✓ This task will appear in your My Tasks section.
+            </p>
+          )}
         </div>
 
-        {/* Manager auto-present notice */}
+        {/* Manager ownership notice */}
         <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-violet-50 border border-violet-100">
           <Avatar initials={manager.initials} color={manager.avatarColor} size="sm" />
           <div className="flex-1 min-w-0">
-            <p className="text-[12px] font-medium text-violet-700">
-              {manager.name} <span className="text-violet-500 font-normal">will be notified of every new request</span>
-            </p>
+            {currentUser.role === 'manager' ? (
+              <p className="text-[12px] font-medium text-violet-700">
+                You are the <span className="font-bold">owner</span> of this request and have full approval authority.
+              </p>
+            ) : (
+              <p className="text-[12px] font-medium text-violet-700">
+                {manager.name} <span className="text-violet-500 font-normal">will be the <strong>owner</strong> of this request and holds full approval authority.</span>
+              </p>
+            )}
           </div>
           <CheckCircle size={14} className="text-violet-400 flex-shrink-0" />
         </div>
@@ -283,7 +314,10 @@ export default function NewRequestModal({ open }: { open: boolean }) {
           <Avatar initials={currentUser.initials} color={currentUser.avatarColor} size="sm" />
           <span className="text-[12px] text-gray-500 truncate">
             Submitting as <span className="font-semibold text-gray-700">{currentUser.name}</span>.{' '}
-            After submission, this will appear in {manager.name}'s approval queue.
+            {currentUser.role !== 'manager'
+              ? `${manager.name} will own and approve this request.`
+              : 'You will own and approve this request.'
+            }
           </span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">

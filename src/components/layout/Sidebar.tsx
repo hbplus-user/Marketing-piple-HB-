@@ -6,7 +6,6 @@ import {
 import { useApp } from '../../context/AppContext';
 import { useRedAlert } from '../../hooks/useRedAlert';
 import { useAuth } from '../../context/AuthContext';
-import PersonaSwitcher from '../shared/PersonaSwitcher';
 import type { View } from '../../types';
 
 const VIEWS: { id: View; label: string; icon: React.ElementType }[] = [
@@ -45,14 +44,12 @@ export default function Sidebar() {
     <aside className="w-60 flex-shrink-0 flex flex-col h-full" style={{ backgroundColor: '#1E1B4B' }}>
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-white/5">
-        <svg viewBox="0 0 165 100" className="h-7 w-auto flex-shrink-0" aria-label="HB+ logo">
-          <rect x="0" y="0" width="14" height="100" fill="white"/>
-          <rect x="14" y="43" width="60" height="14" fill="white"/>
-          <path fill="white" fillRule="evenodd" d="M 74,0 H 110 A 18,18 0 0,1 128,18 V 32 A 18,18 0 0,1 110,50 H 74 Z M 74,14 H 110 A 4,4 0 0,1 114,18 V 32 A 4,4 0 0,1 110,36 H 74 Z"/>
-          <path fill="white" fillRule="evenodd" d="M 74,50 H 112 A 20,20 0 0,1 132,70 V 80 A 20,20 0 0,1 112,100 H 74 Z M 74,64 H 112 A 6,6 0 0,1 118,70 V 80 A 6,6 0 0,1 112,86 H 74 Z"/>
-          <rect x="130" y="62" width="35" height="12" fill="white"/>
-          <rect x="139" y="50" width="12" height="44" fill="white"/>
-        </svg>
+        <img
+          src="/client-logo.jpg"
+          alt="HB+ logo"
+          className="h-8 w-8 rounded-lg object-contain flex-shrink-0"
+          style={{ background: 'white' }}
+        />
         <div>
           <p className="text-[13px] font-bold text-white leading-tight">HB+</p>
           <p className="text-[10px] text-indigo-300 leading-tight">Marketing Ops</p>
@@ -168,9 +165,8 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Persona switcher + Log out */}
-      <div className="px-3 pb-3 border-t border-white/5 pt-3 space-y-1">
-        <PersonaSwitcher />
+      {/* Log out */}
+      <div className="px-3 pb-3 border-t border-white/5 pt-3">
         <button
           onClick={signOut}
           className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors"

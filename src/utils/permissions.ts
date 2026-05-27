@@ -2,13 +2,14 @@ import type { ContentRequest, Role } from '../types';
 
 /**
  * Manager → full approval (Done).
- * Founder or employee owner → partial approval (Partially Approved).
+ * Founder → partial approval.
+ * Employee who created (requesterId) OR is owner → partial approval.
  * Other employees → cannot approve.
  */
 export function canApprove(role: Role, req: ContentRequest, userId: string): boolean {
   if (role === 'manager') return true;
-  if (role === 'founder') return true;   // partial approval
-  return req.ownerId === userId;         // employee: only if task owner
+  if (role === 'founder') return true;
+  return req.ownerId === userId || req.requesterId === userId;
 }
 
 /** Returns true when the approval is full (manager), false when partial. */
@@ -21,10 +22,10 @@ export function canOverride(role: Role): boolean {
   return role === 'manager';
 }
 
-/** Founder + manager + task owner can request changes. */
+/** Founder + manager + task owner + creator can request changes. */
 export function canRequestChanges(role: Role, req: ContentRequest, userId: string): boolean {
   if (role === 'manager' || role === 'founder') return true;
-  return req.ownerId === userId || req.reviewerIds.includes(userId);
+  return req.ownerId === userId || req.requesterId === userId || req.reviewerIds.includes(userId);
 }
 
 /** Only manager sees the approval queue. */
