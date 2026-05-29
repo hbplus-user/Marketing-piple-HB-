@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
 import { Paperclip, Calendar, Link, Send, ChevronRight } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -8,7 +8,6 @@ import StatusChip from '../shared/StatusChip';
 import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
-import { USERS } from '../../data/mockData';
 import { daysToDeadline, calcInternalDeadline } from '../../utils/deadlineUtils';
 import { canEditPostDate } from '../../utils/permissions';
 import type { Status } from '../../types';
@@ -26,7 +25,7 @@ const QUICK_CHIPS = [
 type ActivityTab = 'all' | 'comments' | 'history';
 
 export default function DesignerTaskModal({ open, requestId }: { open: boolean; requestId?: string }) {
-  const { requests, closeModal, updateRequest, openModal, addComment, currentUser } = useApp();
+  const { requests, closeModal, updateRequest, openModal, addComment, currentUser, users } = useApp();
 
   const [commentText, setCommentText]     = useState('');
   const [refLink, setRefLink]             = useState('');
@@ -122,10 +121,10 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
 
   if (!req) return null;
 
-  const requester = USERS.find(u => u.id === req.requesterId);
-  const assignees = USERS.filter(u => req.assigneeIds.includes(u.id));
-  const owner     = USERS.find(u => u.id === req.ownerId);
-  const reviewers = req.reviewerIds.map(id => USERS.find(u => u.id === id)).filter(Boolean);
+  const requester = users.find(u => u.id === req.requesterId);
+  const assignees = users.filter(u => req.assigneeIds.includes(u.id));
+  const owner     = users.find(u => u.id === req.ownerId);
+  const reviewers = req.reviewerIds.map(id => users.find(u => u.id === id)).filter(Boolean);
   const dtd       = daysToDeadline(req.internalDeadline);
 
   const setStatus = (s: Status) => {
@@ -296,7 +295,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Assigned to</p>
                 {isEditing ? (
                   <div className="flex flex-col gap-1">
-                    {USERS.filter(u => u.role !== 'manager').map(u => {
+                    {users.filter(u => u.role !== 'manager').map(u => {
                       const selected = editAssigneeIds.includes(u.id);
                       return (
                         <button
@@ -465,7 +464,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
             ) : (
               <div className="space-y-4">
                 {feedItems.map((item, i) => {
-                  const user = USERS.find(u => u.id === item.userId);
+                  const user = users.find(u => u.id === item.userId);
                   if (item.kind === 'comment') {
                     const isMe = item.userId === currentUser.id;
                     return (

@@ -1,13 +1,12 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { format } from 'date-fns';
 import { CalendarDays, Bell, ShieldAlert } from 'lucide-react';
 import Modal from '../shared/Modal';
 import { useApp } from '../../context/AppContext';
-import { USERS } from '../../data/mockData';
 import { canEditPostDate } from '../../utils/permissions';
 
 export default function EditPostDateModal({ open, requestId }: { open: boolean; requestId?: string }) {
-  const { requests, closeModal, editPostDate, currentUser } = useApp();
+  const { requests, closeModal, editPostDate, currentUser, users } = useApp();
   const [newDate, setNewDate] = useState('');
   const [reason, setReason] = useState('');
 
@@ -15,8 +14,8 @@ export default function EditPostDateModal({ open, requestId }: { open: boolean; 
   if (!req) return null;
 
   const canEdit = canEditPostDate(currentUser.role, req, currentUser.id);
-  const requester = USERS.find(u => u.id === req.requesterId);
-  const assignees = USERS.filter(u => req.assigneeIds.includes(u.id));
+  const requester = users.find(u => u.id === req.requesterId);
+  const assignees = users.filter(u => req.assigneeIds.includes(u.id));
 
   const handleSave = () => {
     if (!newDate || !reason.trim()) return;

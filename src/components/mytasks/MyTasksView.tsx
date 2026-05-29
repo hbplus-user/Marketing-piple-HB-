@@ -7,7 +7,6 @@ import Badge from '../shared/Badge';
 import StatusChip from '../shared/StatusChip';
 import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
-import { USERS } from '../../data/mockData';
 import type { ContentRequest, Status } from '../../types';
 
 const SECTIONS: { status: Status; label: string }[] = [
@@ -22,7 +21,7 @@ function Section({
 }: {
   label: string; requests: ContentRequest[]; open: boolean; onToggle: () => void;
 }) {
-  const { openModal } = useApp();
+  const { openModal, users } = useApp();
   if (requests.length === 0) return null;
   return (
     <div className="mb-4">
@@ -41,7 +40,7 @@ function Section({
           {requests.map((req, i) => {
             const urgency = getUrgency(req);
             const urgent = urgency === 'urgent' || urgency === 'overdue';
-            const reviewers = req.reviewerIds.map(id => USERS.find(u => u.id === id)).filter(Boolean);
+            const reviewers = req.reviewerIds.map(id => users.find(u => u.id === id)).filter(Boolean);
 
             return (
               <div

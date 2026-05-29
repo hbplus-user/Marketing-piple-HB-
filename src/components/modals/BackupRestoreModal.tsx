@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -11,7 +11,6 @@ import Badge from '../shared/Badge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 import { decompressRequests } from '../../utils/backupUtils';
-import { USERS } from '../../data/mockData';
 import type { BackupSnapshot, ContentRequest, Role } from '../../types';
 
 type RestoreScope = 'org' | 'role' | 'user' | 'individual';
@@ -35,7 +34,7 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
   const {
     closeModal, backups, backupsLoading,
     createBackup, restoreAll, restoreByRole, restoreByUser, restoreOne, deleteBackup,
-    requests,
+    requests, users,
   } = useApp();
 
   const [labelInput, setLabelInput]   = useState('');
@@ -104,7 +103,7 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
 
   const currentIds = new Set(requests.map(r => r.id));
   const creatorOf = (snapshot: BackupSnapshot) =>
-    USERS.find(u => u.id === snapshot.createdBy) ?? null;
+    users.find(u => u.id === snapshot.createdBy) ?? null;
 
   return (
     <Modal open={open} onClose={closeModal} size="lg">
@@ -294,7 +293,7 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
                               </p>
                               <div className="grid grid-cols-3 gap-2">
                                 {ROLE_CONFIG.map(rc => {
-                                  const roleUsers = USERS.filter(u => u.role === rc.role);
+                                  const roleUsers = users.filter(u => u.role === rc.role);
                                   return (
                                     <button
                                       key={rc.role}
@@ -324,7 +323,7 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
                                 Restore all requests submitted by a specific user.
                               </p>
                               <div className="grid grid-cols-2 gap-2">
-                                {USERS.map(u => (
+                                {users.map(u => (
                                   <button
                                     key={u.id}
                                     onClick={() => confirmRestore({

@@ -1,11 +1,10 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { format, addDays } from 'date-fns';
 import { AlertTriangle, CheckCircle, Link, Plus, X } from 'lucide-react';
 import Modal from '../shared/Modal';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 import { calcInternalDeadline, daysToDeadline } from '../../utils/deadlineUtils';
-import { USERS } from '../../data/mockData';
 import type { Pipeline } from '../../types';
 
 const PIPELINES: { value: Pipeline; label: string; desc: string; color: string }[] = [
@@ -16,7 +15,7 @@ const PIPELINES: { value: Pipeline; label: string; desc: string; color: string }
 ];
 
 export default function NewRequestModal({ open }: { open: boolean }) {
-  const { closeModal, addRequest, currentUser } = useApp();
+  const { closeModal, addRequest, currentUser, users } = useApp();
 
   const [title, setTitle]         = useState('');
   const [brief, setBrief]         = useState('');
@@ -40,8 +39,8 @@ export default function NewRequestModal({ open }: { open: boolean }) {
   const toggleAssignee = (id: string) =>
     setAssigneeIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
-  const manager = USERS.find(u => u.role === 'manager')!;
-  const assignableUsers = USERS.filter(u => u.role !== 'manager');
+  const manager = users.find(u => u.role === 'manager') || users.find(u => u.id === currentUser.id) || currentUser;
+  const assignableUsers = users.filter(u => u.role !== 'manager');
 
   const postDateObj = postDate ? new Date(postDate) : null;
 

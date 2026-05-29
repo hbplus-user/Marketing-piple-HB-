@@ -1,4 +1,4 @@
-﻿import { motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 import { CheckCircle2 } from 'lucide-react';
 import Modal from '../shared/Modal';
@@ -6,14 +6,13 @@ import Badge from '../shared/Badge';
 import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
-import { USERS } from '../../data/mockData';
 
 export default function FinalApprovalModal({ open, requestId }: { open: boolean; requestId?: string }) {
-  const { requests, closeModal } = useApp();
+  const { requests, closeModal, users } = useApp();
   const req = requests.find(r => r.id === requestId);
   if (!req || !req.approvedAt) return null;
 
-  const approvedByUsers = req.approvedBy.map(id => USERS.find(u => u.id === id)).filter(Boolean);
+  const approvedByUsers = req.approvedBy.map(id => users.find(u => u.id === id)).filter(Boolean);
 
   return (
     <Modal open={open} onClose={closeModal} size="lg">

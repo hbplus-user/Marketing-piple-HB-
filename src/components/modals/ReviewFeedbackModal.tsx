@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { format } from 'date-fns';
 import { Paperclip, ImageIcon, Link, UserMinus, ShieldCheck } from 'lucide-react';
 import Modal from '../shared/Modal';
@@ -6,11 +6,10 @@ import Badge from '../shared/Badge';
 import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
-import { USERS } from '../../data/mockData';
 import { canApprove, canRequestChanges, canRemoveCreator, isFullApproval, canEditPostDate } from '../../utils/permissions';
 
 export default function ReviewFeedbackModal({ open, requestId }: { open: boolean; requestId?: string }) {
-  const { requests, closeModal, approveRequest, requestChanges, removeCreatorFromApproval, currentUser, openModal } = useApp();
+  const { requests, closeModal, approveRequest, requestChanges, removeCreatorFromApproval, currentUser, openModal, users } = useApp();
   const [comment, setComment] = useState('');
   const [refLink, setRefLink] = useState('');
 
@@ -22,7 +21,7 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
   const userCanRemove     = canRemoveCreator(currentUser.role, req, currentUser.id);
   const isManager         = currentUser.role === 'manager';
   const isFull            = isFullApproval(currentUser.role);
-  const creatorUser       = USERS.find(u => u.id === req.requesterId);
+  const creatorUser       = users.find(u => u.id === req.requesterId);
 
   const handleApprove = () => {
     approveRequest(req.id);
@@ -115,7 +114,7 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                 ) : (
                   <div className="space-y-3">
                     {round.comments.map((c, i) => {
-                      const user = USERS.find(u => u.id === c.userId);
+                      const user = users.find(u => u.id === c.userId);
                       return (
                         <div key={i} className="flex items-start gap-2.5">
                           {user && <Avatar initials={user.initials} color={user.avatarColor} size="sm" title={user.name} />}

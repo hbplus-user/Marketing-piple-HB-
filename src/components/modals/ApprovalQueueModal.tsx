@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { CheckCircle, ArrowUp, MessageSquare, ExternalLink, AlertTriangle, Link, Send, X, ChevronDown } from 'lucide-react';
 import Modal from '../shared/Modal';
@@ -6,18 +6,15 @@ import Badge from '../shared/Badge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 import { isRedAlert } from '../../utils/deadlineUtils';
-import { USERS } from '../../data/mockData';
 
 interface RequestForm {
   comment: string;
   refLink: string;
 }
 
-// Users eligible to be escalated to
-const ESCALATION_USERS = USERS.filter(u => u.role === 'founder' || u.role === 'manager');
-
 export default function ApprovalQueueModal({ open }: { open: boolean }) {
-  const { requests, closeModal, updateRequest, requestChanges, openModal } = useApp();
+  const { requests, closeModal, updateRequest, requestChanges, openModal, users } = useApp();
+  const escalationUsers = users.filter(u => u.role === 'founder' || u.role === 'manager');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [forms, setForms] = useState<Record<string, RequestForm>>({});
   const [escalateOpenId, setEscalateOpenId] = useState<string | null>(null);
@@ -26,7 +23,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
   const pending = requests.filter(r => r.status === 'To Do' && r.assigneeIds.length === 0);
 
   const accept = (id: string) => {
-    const employee = USERS.find(u => u.role === 'employee');
+    const employee = users.find(u => u.role === 'employee');
     updateRequest(id, { assigneeIds: employee ? [employee.id] : [], status: 'In Progress' });
   };
 
@@ -100,7 +97,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
         ) : (
           <div className="space-y-3">
             {pending.map(req => {
-              const requester = USERS.find(u => u.id === req.requesterId);
+              const requester = users.find(u => u.id === req.requesterId);
               const alert = isRedAlert(req);
               const isExpanded = expandedId === req.id;
               const isEscalateOpen = escalateOpenId === req.id;
@@ -192,7 +189,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
                         Choose who to escalate to
                       </p>
                       <div className="flex flex-wrap gap-2">
-                        {ESCALATION_USERS.map(u => {
+                        {escalationUsers.map(u => {
                           const isSelected = (escalateSelections[req.id] ?? []).includes(u.id);
                           return (
                             <button

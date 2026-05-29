@@ -10,13 +10,12 @@ import RedAlertChip from '../shared/RedAlertChip';
 import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
-import { USERS } from '../../data/mockData';
 
 export default function KanbanCard({ req }: { req: ContentRequest }) {
-  const { openModal } = useApp();
+  const { openModal, users } = useApp();
   const alert = isRedAlert(req);
   const pipelineColor = pipelineConfig[req.pipeline]?.dot ?? '#6B7280';
-  const assignees = USERS.filter(u => req.assigneeIds.includes(u.id));
+  const assignees = users.filter(u => req.assigneeIds.includes(u.id));
 
   const handleClick = () => {
     if (req.status === 'In Review' || req.status === 'Done') {

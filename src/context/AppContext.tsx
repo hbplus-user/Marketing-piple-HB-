@@ -9,6 +9,7 @@ import {
   fetchBackupsFromSupabase, saveBackupToSupabase, deleteBackupFromSupabase,
 } from '../utils/backupUtils';
 import { supabase } from '../lib/supabase';
+import { useAuth } from './AuthContext';
 
 const AUTO_INTERVAL = 6 * 60 * 60 * 1000;
 
@@ -19,6 +20,7 @@ export interface DateRange {
 
 interface AppState {
   currentUser: User;
+  users: User[];
   requests: ContentRequest[];
   filteredRequests: ContentRequest[];
   activeView: View;
@@ -52,12 +54,76 @@ interface AppState {
 const AppContext = createContext<AppState | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  const { user: authUser, userRole } = useAuth();
   const [currentUser, setCurrentUser] = useState<User>(USERS[0]);
+  const [users, setUsers]               = useState<User[]>([]);
   const [requests, setRequests]       = useState<ContentRequest[]>(MOCK_REQUESTS);
   const [activeView, setActiveView]   = useState<View>('kanban');
   const [activeModal, setActiveModal] = useState<ModalState | null>(null);
   const [activePipelines, setActivePipelines] = useState<Pipeline[]>([]);
   const [dateRange, setDateRangeState]        = useState<DateRange>({ start: null, end: null });
+
+  // Sync currentUser with active Supabase session
+  useEffect(() => {
+    if (authUser) {
+      const initials = authUser.user_metadata?.full_name
+        ? authUser.user_metadata.full_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+        : (authUser.email?.[0] ?? 'U').toUpperCase();
+      
+      setCurrentUser({
+        id: authUser.id,
+        name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
+        email: authUser.email,
+        initials,
+        role: userRole || 'employee',
+        avatarColor: '#3B82F6',
+      });
+    }
+  }, [authUser, userRole]);
+
+  // Load users/profiles from Supabase
+  useEffect(() => {
+    const loadUsers = async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, name, email, role');
+      
+      if (data && data.length > 0) {
+        const mappedUsers: User[] = data.map(p => {
+          const initials = p.name
+            ? p.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+            : (p.email?.[0] ?? 'U').toUpperCase();
+          return {
+            id: p.id,
+            name: p.name || 'Unknown User',
+            email: p.email || undefined,
+            role: (p.role as Role) || 'employee',
+            avatarColor: '#3B82F6',
+            initials,
+          };
+        });
+        
+        // Ensure current authenticated user is included in the list
+        if (authUser && !mappedUsers.some(u => u.id === authUser.id)) {
+          const selfInitials = authUser.user_metadata?.full_name
+            ? authUser.user_metadata.full_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+            : (authUser.email?.[0] ?? 'U').toUpperCase();
+          mappedUsers.push({
+            id: authUser.id,
+            name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
+            email: authUser.email,
+            initials: selfInitials,
+            role: userRole || 'employee',
+            avatarColor: '#3B82F6',
+          });
+        }
+        setUsers(mappedUsers);
+      } else {
+        setUsers(USERS);
+      }
+    };
+    loadUsers();
+  }, [authUser]);
   const [backups, setBackups]         = useState<BackupSnapshot[]>([]);
   const [backupsLoading, setBackupsLoading] = useState(true);
 
@@ -271,7 +337,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AppContext.Provider value={{
-      currentUser, requests, filteredRequests, activeView, activeModal,
+      currentUser, users, requests, filteredRequests, activeView, activeModal,
       activePipelines, dateRange, backups, backupsLoading,
       setCurrentUser, setActiveView, openModal, closeModal,
       updateRequest, addRequest, approveRequest, requestChanges,

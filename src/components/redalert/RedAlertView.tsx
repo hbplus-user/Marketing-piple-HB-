@@ -6,7 +6,6 @@ import { useApp } from '../../context/AppContext';
 import { daysToDeadline, getUrgency } from '../../utils/deadlineUtils';
 import { canEditPostDate } from '../../utils/permissions';
 import Badge from '../shared/Badge';
-import { USERS } from '../../data/mockData';
 import type { ContentRequest } from '../../types';
 
 function KPITile({ label, value, color, bg }: { label: string; value: number; color: string; bg: string }) {
@@ -31,7 +30,7 @@ function KPITile({ label, value, color, bg }: { label: string; value: number; co
 }
 
 export default function RedAlertView() {
-  const { filteredRequests: requests, currentUser, openModal } = useApp();
+  const { filteredRequests: requests, currentUser, openModal, users } = useApp();
   const [sortKey, setSortKey] = useState<keyof ContentRequest>('postDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
@@ -117,7 +116,7 @@ export default function RedAlertView() {
                 const days = daysToDeadline(req.internalDeadline);
                 const urgencyPct = req.status === 'Done' ? 100 :
                   Math.max(0, Math.min(100, ((req.daysNeeded - days) / req.daysNeeded) * 100));
-                const owner = USERS.find(u => u.id === req.ownerId);
+                const owner = users.find(u => u.id === req.ownerId);
                 const color = urgencyColor[urgency];
 
                 return (

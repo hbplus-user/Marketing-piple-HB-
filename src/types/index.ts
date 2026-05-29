@@ -12,6 +12,7 @@ export interface User {
   initials: string;
   role: Role;
   avatarColor: string;
+  email?: string;
 }
 
 export interface ReviewRound {
