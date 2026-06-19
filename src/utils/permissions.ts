@@ -28,9 +28,9 @@ export function canRequestChanges(role: Role, req: ContentRequest, userId: strin
   return req.ownerId === userId || req.requesterId === userId || req.reviewerIds.includes(userId);
 }
 
-/** Only manager sees the approval queue. */
+/** Manager and founder see the approval queue. */
 export function canAccessApprovalQueue(role: Role): boolean {
-  return role === 'manager';
+  return role === 'manager' || role === 'founder';
 }
 
 /** Requester, manager, and founder can edit post dates/tasks. */
@@ -46,4 +46,20 @@ export function canRemoveCreator(role: Role, req: ContentRequest, userId: string
 /** Employees only see their own requests; manager/founder see all. */
 export function canViewAllRequests(role: Role): boolean {
   return role === 'manager' || role === 'founder';
+}
+
+/** Returns true if the task is approved (or doesn't require further manager/founder approval). */
+export function isTaskApproved(req: ContentRequest): boolean {
+  // If status is already past 'To Do', it's considered approved
+  if (req.status !== 'To Do') return true;
+
+  // Check new fields if they exist
+  if (req.managerApproved !== undefined) {
+    if (!req.managerApproved) return false;
+    if (req.founderApprovalRequired && !req.founderApproved) return false;
+    return true;
+  }
+
+  // Backwards compatibility for existing tasks
+  return true;
 }

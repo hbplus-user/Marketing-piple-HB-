@@ -51,13 +51,12 @@ export default function KanbanCard({ req }: { req: ContentRequest }) {
       }}
       role="button"
       tabIndex={0}
-      aria-label={`${req.id}: ${req.title}`}
+      aria-label={req.title}
       onKeyDown={e => e.key === 'Enter' && handleClick()}
     >
       <div className="px-3.5 pt-2.5 pb-3 space-y-2">
         {/* Top row */}
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] font-mono text-gray-400">{req.id}</span>
           <Badge pipeline={req.pipeline} />
         </div>
 

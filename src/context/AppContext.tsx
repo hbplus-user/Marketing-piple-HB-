@@ -13,6 +13,23 @@ import { useAuth } from './AuthContext';
 
 const AUTO_INTERVAL = 6 * 60 * 60 * 1000;
 
+// Recursively revive ISO date strings in known date fields back to Date objects
+const DATE_FIELDS = new Set(['postDate', 'internalDeadline', 'approvedAt', 'createdAt', 'date']);
+function reviveObj(obj: unknown): unknown {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(reviveObj);
+  const result: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    if (DATE_FIELDS.has(k) && typeof v === 'string') {
+      const d = new Date(v);
+      result[k] = isNaN(d.getTime()) ? v : d;
+    } else {
+      result[k] = reviveObj(v);
+    }
+  }
+  return result;
+}
+
 export interface DateRange {
   start: Date | null;
   end: Date | null;
@@ -57,11 +74,73 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const { user: authUser, userRole } = useAuth();
   const [currentUser, setCurrentUser] = useState<User>(USERS[0]);
   const [users, setUsers]               = useState<User[]>([]);
-  const [requests, setRequests]       = useState<ContentRequest[]>(MOCK_REQUESTS);
+  const [requests, setRequests]       = useState<ContentRequest[]>([]);
   const [activeView, setActiveView]   = useState<View>('kanban');
   const [activeModal, setActiveModal] = useState<ModalState | null>(null);
   const [activePipelines, setActivePipelines] = useState<Pipeline[]>([]);
   const [dateRange, setDateRangeState]        = useState<DateRange>({ start: null, end: null });
+
+  // Guard: only sync to Supabase after we've finished the initial load
+  const supabaseReady = useRef(false);
+
+  // Load all requests from Supabase when user logs in, then subscribe to real-time changes
+  useEffect(() => {
+    if (!authUser) return;
+    supabaseReady.current = false;
+
+    // Initial load
+    supabase
+      .from('content_requests')
+      .select('data')
+      .order('updated_at', { ascending: false })
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('[Pipeline] Failed to load requests:', error.message);
+          setRequests(MOCK_REQUESTS);
+        } else if (data && data.length > 0) {
+          setRequests(data.map(row => reviveObj(row.data) as ContentRequest));
+        } else {
+          setRequests([]);
+        }
+        supabaseReady.current = true;
+      });
+
+    // Real-time subscription — any INSERT or UPDATE on the table updates local state instantly
+    const channel = supabase
+      .channel('content_requests_live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'content_requests' },
+        (payload) => {
+          if (payload.eventType === 'DELETE') {
+            setRequests(prev => prev.filter(r => r.id !== (payload.old as { id: string }).id));
+          } else {
+            const incoming = reviveObj((payload.new as { data: unknown }).data) as ContentRequest;
+            setRequests(prev => {
+              const idx = prev.findIndex(r => r.id === incoming.id);
+              if (idx >= 0) return prev.map(r => r.id === incoming.id ? incoming : r);
+              return [incoming, ...prev];
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [authUser]);
+
+  // Debounced sync: push all requests to Supabase 1.5s after any change
+  // Guard prevents writing mock/empty data before the initial load completes
+  useEffect(() => {
+    if (!authUser || !supabaseReady.current) return;
+    const timer = setTimeout(() => {
+      const rows = requests.map(r => ({ id: r.id, data: r, updated_at: new Date().toISOString() }));
+      supabase.from('content_requests').upsert(rows).then(({ error }) => {
+        if (error) console.error('[Pipeline] Sync failed:', error.message);
+      });
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [requests, authUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync currentUser with active Supabase session
   useEffect(() => {
@@ -180,7 +259,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addRequest = useCallback((req: ContentRequest) => {
     setRequests(prev => [req, ...prev]);
-  }, []);
+    // Immediately persist to Supabase so other users see it right away
+    if (authUser) {
+      supabase.from('content_requests').upsert({ id: req.id, data: req, updated_at: new Date().toISOString() });
+    }
+  }, [authUser]);
 
   const approveRequest = useCallback((id: string) => {
     setRequests(prev => prev.map(r => {

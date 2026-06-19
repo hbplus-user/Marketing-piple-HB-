@@ -48,6 +48,9 @@ export interface ContentRequest {
   createdAt: Date;
   postDateHistory: { date: Date; reason: string; changedBy: string }[];
   creatorRemovedFromApproval: boolean;    // owner can remove creator from sign-off chain
+  managerApproved?: boolean;
+  founderApprovalRequired?: boolean;
+  founderApproved?: boolean;
 }
 
 export type View = 'kanban' | 'calendar' | 'gantt' | 'redalert' | 'mytasks';

@@ -38,7 +38,18 @@ export default function Sidebar() {
     (r.assigneeIds.includes(currentUser.id) || r.requesterId === currentUser.id) && r.status !== 'Done'
   ).length;
 
-  const pendingApprovalCount = requests.filter(r => r.status === 'To Do' && r.assigneeIds.length === 0).length;
+  const pendingApprovalCount = (() => {
+    if (currentUser.role === 'manager' || currentUser.role === 'founder') {
+      return requests.filter(r =>
+        r.status === 'To Do' && !(r.approvedBy ?? []).includes(currentUser.id)
+      ).length + requests.filter(r =>
+        r.status === 'In Review' &&
+        (r.reviewerIds ?? []).includes(currentUser.id) &&
+        !(r.approvedBy ?? []).includes(currentUser.id)
+      ).length;
+    }
+    return 0;
+  })();
 
   return (
     <aside className="w-60 flex-shrink-0 flex flex-col h-full" style={{ backgroundColor: '#1a1a1a' }}>
@@ -56,8 +67,8 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Approval Queue — manager only */}
-      {currentUser.role === 'manager' && (
+      {/* Approval Queue — manager and founder */}
+      {(currentUser.role === 'manager' || currentUser.role === 'founder') && (
         <div className="px-3 pt-4 space-y-1">
           <motion.button
             whileHover={{ scale: 1.01, y: -1 }}

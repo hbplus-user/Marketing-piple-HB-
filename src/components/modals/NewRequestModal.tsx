@@ -90,6 +90,9 @@ export default function NewRequestModal({ open }: { open: boolean }) {
       createdAt: new Date(),
       postDateHistory: [],
       creatorRemovedFromApproval: false,
+      managerApproved: currentUser.role === 'manager' || currentUser.role === 'founder',
+      founderApprovalRequired: false,
+      founderApproved: currentUser.role === 'founder',
     });
     reset();
     closeModal();
@@ -176,7 +179,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
                 onClick={() => setPipeline(p.value)}
                 className={`flex items-start gap-3 p-3 rounded-xl border-2 text-left transition-all ${
                   pipeline === p.value
-                    ? 'border-indigo-500 bg-[#f5ece7]'
+                    ? 'border-[#a9674d] bg-[#f5ece7]'
                     : 'border-gray-200 hover:border-gray-300 bg-white'
                 }`}
               >
@@ -233,8 +236,8 @@ export default function NewRequestModal({ open }: { open: boolean }) {
             max={30}
             value={daysNeeded}
             onChange={e => setDaysNeeded(parseInt(e.target.value))}
-            className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-indigo-600"
-            style={{ background: `linear-gradient(to right, #4F46E5 ${(daysNeeded / 30) * 100}%, #E5E7EB ${(daysNeeded / 30) * 100}%)` }}
+            className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-[#a9674d]"
+            style={{ background: `linear-gradient(to right, #a9674d ${(daysNeeded / 30) * 100}%, #E5E7EB ${(daysNeeded / 30) * 100}%)` }}
           />
           <div className="flex justify-between text-[10px] text-gray-400 mt-1">
             <span>1 day</span>
@@ -261,7 +264,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
               className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full border text-xs font-medium transition-all ${
                 isMeSelected
                   ? 'border-green-400 bg-green-50 text-green-700'
-                  : 'border-dashed border-gray-300 bg-white text-gray-500 hover:border-indigo-300 hover:bg-[#f5ece7] hover:text-[#a9674d]'
+                  : 'border-dashed border-gray-300 bg-white text-gray-500 hover:border-[#c4a98a] hover:bg-[#f5ece7] hover:text-[#a9674d]'
               }`}
             >
               <Avatar initials={currentUser.initials} color={currentUser.avatarColor} size="sm" />
