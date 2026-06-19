@@ -613,23 +613,17 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                                   approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
                                 });
                               } else {
-                                const employee = users.find(u => u.role === 'employee');
                                 updateRequest(req.id, {
                                   managerApproved: true,
                                   founderApprovalRequired: false,
                                   founderApproved: true,
                                   approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
-                                  assigneeIds: req.assigneeIds.length > 0 ? req.assigneeIds : (employee ? [employee.id] : []),
-                                  status: 'In Progress',
                                 });
                               }
                             } else if (req.founderApprovalRequired && !req.founderApproved) {
-                              const employee = users.find(u => u.role === 'employee');
                               updateRequest(req.id, {
                                 founderApproved: true,
                                 approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
-                                assigneeIds: req.assigneeIds.length > 0 ? req.assigneeIds : (employee ? [employee.id] : []),
-                                status: 'In Progress',
                               });
                             }
                           }}

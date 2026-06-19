@@ -40,13 +40,14 @@ export default function Sidebar() {
 
   const pendingApprovalCount = (() => {
     if (currentUser.role === 'manager' || currentUser.role === 'founder') {
-      return requests.filter(r =>
-        r.status === 'To Do' && !(r.approvedBy ?? []).includes(currentUser.id)
-      ).length + requests.filter(r =>
+      const pManager = requests.filter(r => r.status === 'To Do' && !r.managerApproved).length;
+      const pFounder = requests.filter(r => r.status === 'To Do' && r.managerApproved && r.founderApprovalRequired && !r.founderApproved).length;
+      const pCoApproval = requests.filter(r =>
         r.status === 'In Review' &&
         (r.reviewerIds ?? []).includes(currentUser.id) &&
         !(r.approvedBy ?? []).includes(currentUser.id)
       ).length;
+      return pManager + pFounder + pCoApproval;
     }
     return 0;
   })();

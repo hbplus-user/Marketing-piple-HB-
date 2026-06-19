@@ -30,7 +30,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
   // 1. Pending Manager Approval (visible to managers and founders)
   const pendingManagerApproval = requests.filter(r =>
     r.status === 'To Do' &&
-    r.managerApproved === false
+    !r.managerApproved
   );
 
   // 2. Pending Founder Approval (visible to founders and managers)
@@ -73,24 +73,18 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
           });
         } else {
           // Fully approved (either founder not required, or founder approved directly)
-          const employee = users.find(u => u.role === 'employee');
           updateRequest(id, {
             managerApproved: true,
             founderApprovalRequired: false,
             founderApproved: true,
             approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
-            assigneeIds: req.assigneeIds.length > 0 ? req.assigneeIds : (employee ? [employee.id] : []),
-            status: 'In Progress',
           });
         }
       } else if (req.founderApprovalRequired && !req.founderApproved) {
         // Approving at the Founder level
-        const employee = users.find(u => u.role === 'employee');
         updateRequest(id, {
           founderApproved: true,
           approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
-          assigneeIds: req.assigneeIds.length > 0 ? req.assigneeIds : (employee ? [employee.id] : []),
-          status: 'In Progress',
         });
       }
     } else {
@@ -158,7 +152,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
   const updateForm = (id: string, field: keyof RequestForm, value: string) => {
     setForms(prev => ({
       ...prev,
-      [id]: { comment: prev[id]?.comment ?? '', refLink: prev[id]?.refLink ?? '', ...prev[id], [field]: value },
+      [id]: { ...(prev[id] || { comment: '', refLink: '' }), [field]: value },
     }));
   };
 
