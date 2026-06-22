@@ -18,7 +18,7 @@ export default function KanbanCard({ req }: { req: ContentRequest }) {
   const assignees = users.filter(u => req.assigneeIds.includes(u.id));
 
   const handleClick = () => {
-    if (req.status === 'In Review' || req.status === 'Done') {
+    if (req.status === 'Design Review' || req.status === 'Approved') {
       openModal({ type: 'review-feedback', requestId: req.id });
     } else {
       openModal({ type: 'designer-task', requestId: req.id });

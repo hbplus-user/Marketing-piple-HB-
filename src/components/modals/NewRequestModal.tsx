@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import { format, addDays } from 'date-fns';
 import { AlertTriangle, CheckCircle, Link, Plus, X } from 'lucide-react';
 import Modal from '../shared/Modal';
@@ -8,14 +8,14 @@ import { calcInternalDeadline, daysToDeadline } from '../../utils/deadlineUtils'
 import type { Pipeline } from '../../types';
 
 const PIPELINES: { value: Pipeline; label: string; desc: string; color: string }[] = [
-  { value: 'PM',           label: 'PM',           desc: 'Strategy & briefs',    color: '#7C3AED' },
-  { value: 'Content',      label: 'Content',      desc: 'Copy & long-form',     color: '#0EA5E9' },
-  { value: 'Art / Design', label: 'Art / Design', desc: 'Visual design',        color: '#EC4899' },
-  { value: 'Events',       label: 'Events',       desc: 'Events & activations', color: '#F59E0B' },
+  { value: 'PM',                   label: 'PM',                   desc: 'Strategy & briefs',    color: '#344161' },
+  { value: 'Organic',              label: 'Organic',              desc: 'Copy & long-form',     color: '#6f8e7c' },
+  { value: 'Internal requirement', label: 'Internal requirement', desc: 'Visual design',        color: '#a9674d' },
+  { value: 'Events',               label: 'Events',               desc: 'Events & activations', color: '#c99d5d' },
 ];
 
 export default function NewRequestModal({ open }: { open: boolean }) {
-  const { closeModal, addRequest, currentUser, users } = useApp();
+  const { closeModal, addRequest, currentUser, users, requests } = useApp();
 
   const [title, setTitle]         = useState('');
   const [brief, setBrief]         = useState('');
@@ -26,12 +26,15 @@ export default function NewRequestModal({ open }: { open: boolean }) {
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [linkInput, setLinkInput]   = useState('');
   const [referenceLinks, setReferenceLinks] = useState<string[]>([]);
+  const linkInputRef = useRef<HTMLInputElement>(null);
 
   const addLink = () => {
     const trimmed = linkInput.trim();
     if (!trimmed || referenceLinks.includes(trimmed)) return;
     setReferenceLinks(prev => [...prev, trimmed]);
     setLinkInput('');
+    // Keep focus so the user can immediately type the next link
+    setTimeout(() => linkInputRef.current?.focus(), 0);
   };
 
   const removeLink = (url: string) => setReferenceLinks(prev => prev.filter(l => l !== url));
@@ -67,15 +70,33 @@ export default function NewRequestModal({ open }: { open: boolean }) {
 
   const handleSubmit = () => {
     if (!title || !pipeline || !postDateObj || !internalDeadline) return;
-    const id = `REQ-${Math.floor(Math.random() * 900) + 100}`;
+    const maxNum = requests.reduce((max, r) => {
+      const m = r.id.match(/REQ-(\d+)/);
+      return m ? Math.max(max, parseInt(m[1], 10)) : max;
+    }, 0);
+    const id = `REQ-${String(maxNum + 1).padStart(3, '0')}`;
+    const creatorIsManager = currentUser.role === 'manager';
+    const creatorIsFounder = currentUser.role === 'founder';
+    // If the creator is the manager/founder the brief is self-approved; start at Design Progress
+    const initialStatus = (creatorIsManager || creatorIsFounder) ? 'Design Progress' : 'Brief Approval';
+    const now = new Date();
+    const initialLog = (creatorIsManager || creatorIsFounder) ? [{
+      id: `log-${now.getTime()}`,
+      type: 'brief_approved' as const,
+      userId: currentUser.id,
+      timestamp: now,
+      fromStatus: 'Brief Approval' as const,
+      toStatus: 'Design Progress' as const,
+    }] : [];
+
     addRequest({
       id,
       title,
       brief,
       pipeline,
-      status: 'To Do',
+      status: initialStatus,
       requesterId: currentUser.id,
-      ownerId: currentUser.role === 'manager' ? currentUser.id : manager.id,
+      ownerId: creatorIsManager ? currentUser.id : manager.id,
       assigneeIds,
       reviewerIds: [manager.id],
       postDate: postDateObj,
@@ -86,13 +107,18 @@ export default function NewRequestModal({ open }: { open: boolean }) {
       attachments: [],
       referenceLinks,
       approvedAt: null,
-      approvedBy: [],
-      createdAt: new Date(),
+      approvedBy: creatorIsManager || creatorIsFounder ? [currentUser.id] : [],
+      createdAt: now,
       postDateHistory: [],
       creatorRemovedFromApproval: false,
-      managerApproved: currentUser.role === 'manager' || currentUser.role === 'founder',
+      managerApproved: creatorIsManager || creatorIsFounder,
       founderApprovalRequired: false,
-      founderApproved: currentUser.role === 'founder',
+      founderApproved: creatorIsFounder,
+      activityLog: initialLog,
+      postedBy: [],
+      assigneeAcceptance: [],
+      submissionLinks: [],
+      submissionNote: '',
     });
     reset();
     closeModal();
@@ -111,7 +137,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
             type="text"
             value={title}
             onChange={e => setTitle(e.target.value)}
-            placeholder="e.g. Q4 Webinar â€” Launch promo kit"
+            placeholder="e.g. Q4 Webinar - Launch promo kit"
             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
           />
         </div>
@@ -136,6 +162,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
             <div className="relative flex-1">
               <Link size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
               <input
+                ref={linkInputRef}
                 type="url"
                 value={linkInput}
                 onChange={e => setLinkInput(e.target.value)}
@@ -245,11 +272,11 @@ export default function NewRequestModal({ open }: { open: boolean }) {
           </div>
         </div>
 
-        {/* Assignees â€” multi-select */}
+        {/* Assignees - multi-select */}
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-2">
             Assignees
-            <span className="ml-1.5 text-gray-400 font-normal">â€” select one or more</span>
+            <span className="ml-1.5 text-gray-400 font-normal">- select one or more</span>
             {assigneeIds.length > 0 && (
               <span className="ml-2 px-1.5 py-0.5 rounded-full bg-[#f0ddd5] text-[#8a4f39] text-[10px] font-bold">
                 {assigneeIds.length} selected
@@ -301,12 +328,12 @@ export default function NewRequestModal({ open }: { open: boolean }) {
 
           {assigneeIds.length === 0 && (
             <p className="text-[11px] text-gray-400 mt-1.5">
-              Optional â€” can be assigned later from the task view.
+              Optional - can be assigned later from the task view.
             </p>
           )}
           {isMeSelected && (
             <p className="text-[11px] text-green-600 mt-1.5 font-medium">
-              âœ“ This task will appear in your My Tasks section.
+              âœ" This task will appear in your My Tasks section.
             </p>
           )}
         </div>

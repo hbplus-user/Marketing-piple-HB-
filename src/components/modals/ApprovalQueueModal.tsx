@@ -6,7 +6,7 @@ import Badge from '../shared/Badge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 import { isRedAlert } from '../../utils/deadlineUtils';
-import type { ContentRequest } from '../../types';
+import type { ContentRequest, ActivityLogEntry } from '../../types';
 
 interface RequestForm {
   comment: string;
@@ -29,13 +29,13 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
 
   // 1. Pending Manager Approval (visible to managers and founders)
   const pendingManagerApproval = requests.filter(r =>
-    r.status === 'To Do' &&
+    r.status === 'Brief Approval' &&
     !r.managerApproved
   );
 
   // 2. Pending Founder Approval (visible to founders and managers)
   const pendingFounderApproval = requests.filter(r =>
-    r.status === 'To Do' &&
+    r.status === 'Brief Approval' &&
     r.managerApproved === true &&
     r.founderApprovalRequired === true &&
     r.founderApproved === false
@@ -43,7 +43,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
 
   // 3. Awaiting Co-Approval
   const pendingCoApproval = requests.filter(r =>
-    r.status === 'In Review' &&
+    r.status === 'Design Review' &&
     (r.reviewerIds ?? []).includes(currentUser.id) &&
     !(r.approvedBy ?? []).includes(currentUser.id)
   );
@@ -51,59 +51,79 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
   const totalPending = pendingManagerApproval.length + pendingFounderApproval.length + pendingCoApproval.length;
 
   // Records current user's approval.
+  const makeLog = (type: ActivityLogEntry['type'], fromStatus: ActivityLogEntry['fromStatus'], toStatus: ActivityLogEntry['toStatus']): ActivityLogEntry => ({
+    id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    type,
+    userId: currentUser.id,
+    timestamp: new Date(),
+    fromStatus,
+    toStatus,
+  });
+
   const accept = (id: string) => {
     const req = requests.find(r => r.id === id);
     if (!req) return;
 
-    if (req.status === 'To Do') {
+    if (req.status === 'Brief Approval') {
       const isFounder = currentUser.role === 'founder';
 
       if (!req.managerApproved) {
-        // Approving at the Manager level
         const needsFounder = requireFounder[id] ?? false;
         if (needsFounder && !isFounder) {
-          // Approved by manager but needs founder
+          // Manager approved but still needs founder — stay in Brief Approval
           const founderIds = users.filter(u => u.role === 'founder').map(u => u.id);
+          const log = makeLog('brief_approved', 'Brief Approval', 'Brief Approval');
           updateRequest(id, {
             managerApproved: true,
             founderApprovalRequired: true,
             founderApproved: false,
             reviewerIds: Array.from(new Set([...(req.reviewerIds ?? []), ...founderIds])),
             approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
+            activityLog: [...(req.activityLog ?? []), log],
           });
         } else {
-          // Fully approved (either founder not required, or founder approved directly)
+          // Manager approved, no founder needed → advance to Design Progress
+          const log = makeLog('brief_approved', 'Brief Approval', 'Design Progress');
           updateRequest(id, {
             managerApproved: true,
             founderApprovalRequired: false,
             founderApproved: true,
             approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
+            status: 'Design Progress',
+            activityLog: [...(req.activityLog ?? []), log],
           });
         }
       } else if (req.founderApprovalRequired && !req.founderApproved) {
-        // Approving at the Founder level
+        // Founder gives final brief approval → advance to Design Progress
+        const log = makeLog('brief_approved', 'Brief Approval', 'Design Progress');
         updateRequest(id, {
           founderApproved: true,
           approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
+          status: 'Design Progress',
+          activityLog: [...(req.activityLog ?? []), log],
         });
       }
     } else {
-      // Co-approval workflow (existing)
+      // Co-approval workflow for Design Review stage
       const newApprovedBy = Array.from(new Set([...(req.approvedBy ?? []), currentUser.id]));
       const reviewerIds = req.reviewerIds ?? [];
       const allApproved = reviewerIds.length === 0 || reviewerIds.every(rid => newApprovedBy.includes(rid));
 
       if (allApproved) {
         const employee = users.find(u => u.role === 'employee');
+        const log = makeLog('brief_approved', req.status, 'Design Progress');
         updateRequest(id, {
           approvedBy: newApprovedBy,
           assigneeIds: req.assigneeIds.length > 0 ? req.assigneeIds : (employee ? [employee.id] : []),
-          status: 'In Progress',
+          status: 'Design Progress',
+          activityLog: [...(req.activityLog ?? []), log],
         });
       } else {
+        const log = makeLog('brief_approved', req.status, 'Design Review');
         updateRequest(id, {
           approvedBy: newApprovedBy,
-          status: 'In Review',
+          status: 'Design Review',
+          activityLog: [...(req.activityLog ?? []), log],
         });
       }
     }
@@ -134,10 +154,12 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
     if (!req) return;
     const mergedReviewers = Array.from(new Set([...req.reviewerIds, ...selected]));
     const newApprovedBy = Array.from(new Set([...req.approvedBy, currentUser.id]));
+    const log = makeLog('brief_approved', req.status, 'Design Review');
     updateRequest(reqId, {
       reviewerIds: mergedReviewers,
       approvedBy: newApprovedBy,
-      status: 'In Review',
+      status: 'Design Review',
+      activityLog: [...(req.activityLog ?? []), log],
     });
     setEscalateOpenId(null);
     setEscalateSelections(prev => { const next = { ...prev }; delete next[reqId]; return next; });
@@ -185,7 +207,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
       .filter(Boolean) as typeof users;
 
     const isPendingFounderForManager =
-      req.status === 'To Do' &&
+      req.status === 'Brief Approval' &&
       req.managerApproved === true &&
       req.founderApprovalRequired === true &&
       req.founderApproved === false &&
@@ -206,13 +228,13 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
                   Tight deadline
                 </span>
               )}
-              {req.status === 'To Do' && req.managerApproved && req.founderApprovalRequired && !req.founderApproved && (
+              {req.status === 'Brief Approval' && req.managerApproved && req.founderApprovalRequired && !req.founderApproved && (
                 <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 border border-amber-200 animate-pulse">
                   <Clock size={10} />
                   Waiting for Founder
                 </span>
               )}
-              {stillPending.length > 0 && req.status !== 'To Do' && (
+              {stillPending.length > 0 && req.status !== 'Brief Approval' && (
                 <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-violet-100 text-violet-700">
                   <Clock size={10} />
                   Waiting on: {stillPending.map(u => u.name).join(', ')}
@@ -246,7 +268,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
           </div>
 
           {/* Checkbox for manager approval to require founder approval */}
-          {currentUser.role === 'manager' && req.status === 'To Do' && !req.managerApproved && (
+          {currentUser.role === 'manager' && req.status === 'Brief Approval' && !req.managerApproved && (
             <div className="flex items-center gap-2 bg-[#f5ece7]/60 px-3 py-2 rounded-xl border border-[#f0ddd5] mb-3 self-start max-w-max">
               <input
                 type="checkbox"
@@ -325,7 +347,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
                 Require co-approval from
               </p>
               <p className="text-[10px] text-violet-500 leading-relaxed">
-                Your approval is recorded now. The task moves to In Progress only after all selected approvers also sign off.
+                Your approval is recorded now. The task moves to Design Progress only after all selected approvers also sign off.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">

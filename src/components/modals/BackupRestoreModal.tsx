@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -147,7 +147,7 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
             className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#a9674d] hover:bg-[#8a4f39] disabled:opacity-50 text-white text-xs font-medium whitespace-nowrap transition-colors"
           >
             {creating ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-            {creating ? 'Savingâ€¦' : 'Create backup'}
+            {creating ? 'Saving...' : 'Create backup'}
           </button>
         </div>
 
@@ -155,7 +155,7 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
         {backupsLoading ? (
           <div className="text-center py-10 text-gray-400 flex flex-col items-center gap-2">
             <Loader2 size={22} className="animate-spin opacity-40" />
-            <p className="text-xs">Loading backups from Supabaseâ€¦</p>
+            <p className="text-xs">Loading backups from Supabase...</p>
           </div>
         ) : backups.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
@@ -447,7 +447,7 @@ export default function BackupRestoreModal({ open }: { open: boolean }) {
                   className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium bg-[#a9674d] hover:bg-[#8a4f39] disabled:opacity-50 text-white rounded-lg transition-colors"
                 >
                   {restoring && <Loader2 size={12} className="animate-spin" />}
-                  {restoring ? 'Restoringâ€¦' : 'Yes, restore'}
+                  {restoring ? 'Restoring...' : 'Yes, restore'}
                 </button>
               </div>
             </motion.div>

@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+﻿import { useState, useRef, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
-import { Paperclip, Calendar, Link, Send, ChevronRight } from 'lucide-react';
+import { Paperclip, Calendar, Link, Send, ChevronRight, Plus, X, CheckCircle, Clock, UserMinus } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Modal from '../shared/Modal';
 import Badge from '../shared/Badge';
@@ -12,7 +12,7 @@ import { daysToDeadline, calcInternalDeadline } from '../../utils/deadlineUtils'
 import { canEditPostDate, isTaskApproved } from '../../utils/permissions';
 import type { Status } from '../../types';
 
-const STATUSES: Status[] = ['To Do', 'In Progress', 'In Review', 'Partially Approved', 'Done'];
+const STATUSES: Status[] = ['Brief Approval', 'Design Progress', 'Design Review', 'Approved', 'Done', 'Posted'];
 
 const QUICK_CHIPS = [
   { emoji: '🎉', label: 'Looks good!' },
@@ -25,7 +25,7 @@ const QUICK_CHIPS = [
 type ActivityTab = 'all' | 'comments' | 'history';
 
 export default function DesignerTaskModal({ open, requestId }: { open: boolean; requestId?: string }) {
-  const { requests, closeModal, updateRequest, openModal, addComment, currentUser, users } = useApp();
+  const { requests, closeModal, updateRequest, openModal, addComment, markAsPosted, submitForReview, acceptTask, removeAssignee, currentUser, users } = useApp();
 
   const [commentText, setCommentText]     = useState('');
   const [refLink, setRefLink]             = useState('');
@@ -43,6 +43,15 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
   const [editLinks, setEditLinks]             = useState<string[]>([]);
   const [newLinkInput, setNewLinkInput]       = useState('');
   const [directReqFounder, setDirectReqFounder] = useState(false);
+
+  // Submit-for-review form
+  const [reviewFormOpen, setReviewFormOpen]   = useState(false);
+  const [reviewLinkInput, setReviewLinkInput] = useState('');
+  const [reviewLinks, setReviewLinks]         = useState<string[]>([]);
+  const [reviewNote, setReviewNote]           = useState('');
+
+  // Per-assignee accept date (keyed by userId)
+  const [acceptDates, setAcceptDates] = useState<Record<string, string>>({});
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef   = useRef<HTMLDivElement>(null);
@@ -65,7 +74,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
     ).sort((a, b) => a.date.getTime() - b.date.getTime());
   }, [req]);
 
-  // History items derived from request data
+  // History items derived from request data + activity log
   const historyItems = useMemo(() => {
     if (!req) return [];
     const items: { kind: 'history'; date: Date; userId?: string; text: string }[] = [];
@@ -73,7 +82,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
     items.push({ kind: 'history', date: req.createdAt, userId: req.requesterId, text: 'created this request' });
 
     for (const h of req.postDateHistory) {
-      items.push({ kind: 'history', date: h.date, userId: h.changedBy, text: `changed the post date â€” ${h.reason}` });
+      items.push({ kind: 'history', date: h.date, userId: h.changedBy, text: `changed the post date — ${h.reason}` });
     }
 
     for (const round of req.rounds) {
@@ -87,9 +96,22 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
       }
     }
 
-    if (req.approvedAt) {
-      const approver = req.approvedBy[req.approvedBy.length - 1];
-      items.push({ kind: 'history', date: req.approvedAt, userId: approver, text: 'approved this request' });
+    const logLabels: Record<string, string> = {
+      brief_approved:      'approved the brief',
+      submitted_for_review:'submitted for design review',
+      partial_approval:    'partially approved (pending manager sign-off)',
+      final_approval:      'gave final approval',
+      changes_requested:   'requested changes → back to Design Progress',
+      marked_posted:       'marked as posted',
+      status_change:       'changed status',
+    };
+    for (const entry of (req.activityLog ?? [])) {
+      items.push({
+        kind: 'history',
+        date: entry.timestamp,
+        userId: entry.userId,
+        text: logLabels[entry.type] ?? entry.type,
+      });
     }
 
     return items.sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -100,6 +122,17 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
     if (activeTab === 'history')  return historyItems;
     return [...commentItems, ...historyItems].sort((a, b) => a.date.getTime() - b.date.getTime());
   }, [activeTab, commentItems, historyItems]);
+
+  // Reset review form when modal closes or switches to a different task
+  useEffect(() => {
+    if (!open) {
+      setReviewFormOpen(false);
+      setReviewLinks([]);
+      setReviewLinkInput('');
+      setReviewNote('');
+      setAcceptDates({});
+    }
+  }, [open, requestId]);
 
   useEffect(() => {
     if (composerOpen) textareaRef.current?.focus();
@@ -130,7 +163,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
 
   const setStatus = (s: Status) => {
     updateRequest(req.id, { status: s });
-    if (s === 'In Review') { closeModal(); openModal({ type: 'review-feedback', requestId: req.id }); }
+    if (s === 'Design Review') { closeModal(); openModal({ type: 'review-feedback', requestId: req.id }); }
   };
 
   const openComposer = (prefill = '') => {
@@ -253,7 +286,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
               <div className="col-span-2 space-y-4">
                 <div>
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Brief</p>
-                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{req.brief || 'â€”'}</p>
+                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{req.brief || '-'}</p>
                 </div>
                 {req.attachments.length > 0 && (
                   <div>
@@ -343,6 +376,88 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                   <span className="text-xs text-gray-400 italic">Unassigned</span>
                 )}
               </div>
+              {/* Assignee acceptance — visible in Design Progress */}
+              {isTaskApproved(req) && req.status === 'Design Progress' && assignees.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Working on</p>
+                  <div className="flex flex-col gap-2">
+                    {[...assignees].sort((a, b) => {
+                      const aAcc = (req.assigneeAcceptance ?? []).find(ac => ac.userId === a.id);
+                      const bAcc = (req.assigneeAcceptance ?? []).find(ac => ac.userId === b.id);
+                      if (aAcc && bAcc) return aAcc.sequence - bAcc.sequence;
+                      if (aAcc) return -1;
+                      if (bAcc) return 1;
+                      return 0;
+                    }).map(u => {
+                      const acceptance = (req.assigneeAcceptance ?? []).find(a => a.userId === u.id);
+                      const isMe = u.id === currentUser.id;
+                      const isMgr = currentUser.role === 'manager';
+                      const dateVal = acceptDates[u.id] ?? '';
+                      return (
+                        <div key={u.id} className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            {acceptance ? (
+                              <span className="w-4 h-4 rounded-full bg-emerald-100 flex items-center justify-center text-[9px] font-bold text-emerald-600 flex-shrink-0">
+                                {acceptance.sequence}
+                              </span>
+                            ) : (
+                              <span className="w-4 h-4 rounded-full bg-gray-100 flex-shrink-0" />
+                            )}
+                            <Avatar initials={u.initials} color={u.avatarColor} size="sm" title={u.name} />
+                            <span className="text-xs font-medium text-gray-700 flex-1 truncate">{u.name}</span>
+                            {acceptance ? (
+                              <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-emerald-50 text-[10px] font-semibold text-emerald-600 border border-emerald-100 flex-shrink-0">
+                                <CheckCircle size={9} /> In Progress
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-gray-400 flex-shrink-0">Pending</span>
+                            )}
+                            {isMgr && (
+                              <button
+                                onClick={() => removeAssignee(req.id, u.id)}
+                                title="Remove assignee"
+                                className="text-gray-300 hover:text-red-500 transition-colors flex-shrink-0"
+                              >
+                                <UserMinus size={12} />
+                              </button>
+                            )}
+                          </div>
+                          {acceptance?.startDate && (
+                            <p className="text-[10px] text-amber-600 pl-6 flex items-center gap-1">
+                              <Clock size={9} /> Starts {format(acceptance.startDate, 'MMM d')}
+                            </p>
+                          )}
+                          {!acceptance && isMe && (
+                            <div className="pl-6 flex items-center gap-1.5 flex-wrap">
+                              <button
+                                onClick={() => acceptTask(req.id)}
+                                className="px-2 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-semibold transition-colors"
+                              >
+                                Accept now
+                              </button>
+                              <input
+                                type="date"
+                                value={dateVal}
+                                onChange={e => setAcceptDates(prev => ({ ...prev, [u.id]: e.target.value }))}
+                                className="px-1.5 py-0.5 text-[10px] border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#a9674d]/30"
+                              />
+                              {dateVal && (
+                                <button
+                                  onClick={() => { acceptTask(req.id, new Date(dateVal)); setAcceptDates(prev => ({ ...prev, [u.id]: '' })); }}
+                                  className="px-2 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-semibold transition-colors"
+                                >
+                                  Start on date
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {reviewers.length > 0 && (
                 <div>
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Reviewers</p>
@@ -375,7 +490,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
             </div>
           </div>
 
-          {/* â”€â”€ Activity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+          {/* â"€â"€ Activity â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */}
           <div className="px-6 pb-6 border-t border-gray-100">
             {/* Title + tabs */}
             <div className="flex items-center gap-4 pt-5 mb-4">
@@ -404,7 +519,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                         onClick={() => openComposer()}
                         className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-400 cursor-text hover:border-gray-300 hover:bg-gray-50/60 transition-colors"
                       >
-                        Add a commentâ€¦
+                        Add a comment...
                       </div>
                       {/* Quick chips */}
                       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
@@ -436,7 +551,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                           <div className="relative border-b border-gray-100">
                             <Link size={11} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                             <input type="url" value={refLink} onChange={e => setRefLink(e.target.value)}
-                              placeholder="Paste reference URLâ€¦"
+                              placeholder="Paste reference URL..."
                               className="w-full pl-8 pr-3 py-2 text-xs bg-gray-50 focus:outline-none placeholder:text-gray-400" />
                           </div>
                         )}
@@ -445,7 +560,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                           value={commentText}
                           onChange={e => setCommentText(e.target.value)}
                           onKeyDown={handleKeyDown}
-                          placeholder="Add a commentâ€¦ (âŒ˜â†µ to send, Esc to cancel)"
+                          placeholder="Add a comment... (CmdEnter to send, Esc to cancel)"
                           rows={3}
                           className="w-full px-3 pt-3 pb-1 text-sm resize-none focus:outline-none placeholder:text-gray-400"
                         />
@@ -602,6 +717,14 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                         <button
                           onClick={() => {
                             const isFounder = currentUser.role === 'founder';
+                            const mkLog = (toStatus: import('../../types').Status) => ({
+                              id: `log-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
+                              type: 'brief_approved' as const,
+                              userId: currentUser.id,
+                              timestamp: new Date(),
+                              fromStatus: req.status,
+                              toStatus,
+                            });
                             if (!req.managerApproved) {
                               if (directReqFounder && !isFounder) {
                                 const founderIds = users.filter(u => u.role === 'founder').map(u => u.id);
@@ -611,6 +734,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                                   founderApproved: false,
                                   reviewerIds: Array.from(new Set([...(req.reviewerIds ?? []), ...founderIds])),
                                   approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
+                                  activityLog: [...(req.activityLog ?? []), mkLog('Brief Approval')],
                                 });
                               } else {
                                 updateRequest(req.id, {
@@ -618,12 +742,16 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                                   founderApprovalRequired: false,
                                   founderApproved: true,
                                   approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
+                                  status: 'Design Progress',
+                                  activityLog: [...(req.activityLog ?? []), mkLog('Design Progress')],
                                 });
                               }
                             } else if (req.founderApprovalRequired && !req.founderApproved) {
                               updateRequest(req.id, {
                                 founderApproved: true,
                                 approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
+                                status: 'Design Progress',
+                                activityLog: [...(req.activityLog ?? []), mkLog('Design Progress')],
                               });
                             }
                           }}
@@ -638,88 +766,186 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                       </span>
                     )
                   ) : (
-                    /* Split Button Group (normal progress controls) */
-                    <div className="relative flex items-center">
-                      <button
-                        onClick={() => {
-                          const nextStepMap: Record<Status, Status> = {
-                            'To Do': 'In Progress',
-                            'In Progress': 'In Review',
-                            'In Review': 'Partially Approved',
-                            'Partially Approved': 'Done',
-                            'Done': 'To Do',
-                          };
-                          setStatus(nextStepMap[req.status]);
-                        }}
-                        className="px-4 py-2 text-sm font-semibold bg-[#a9674d] hover:bg-[#8a4f39] text-white rounded-l-lg transition-colors border-r border-indigo-500/30"
-                      >
-                        {req.status === 'To Do' && 'Start Progress'}
-                        {req.status === 'In Progress' && 'Submit for review'}
-                        {req.status === 'In Review' && 'Approve Round'}
-                        {req.status === 'Partially Approved' && 'Mark as Done'}
-                        {req.status === 'Done' && 'Reopen Request'}
-                      </button>
-                      <div className="relative">
-                        <button
-                          onClick={() => setDropdownOpen(!dropdownOpen)}
-                          className="px-2.5 py-2.5 bg-[#a9674d] hover:bg-[#8a4f39] text-white rounded-r-lg transition-colors flex items-center justify-center"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <path d="M6 9l6 6 6-6" />
-                          </svg>
-                        </button>
-                        
-                        {/* Dropdown Menu */}
-                        <AnimatePresence>
-                          {dropdownOpen && (
-                            <>
-                              <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
-                              <motion.div
-                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                style={{
-                                  position: 'absolute',
-                                  bottom: '100%',
-                                  right: 0,
-                                  marginBottom: '8px',
-                                  width: '180px',
-                                  background: '#ffffff',
-                                  borderRadius: '12px',
-                                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 16px -6px rgba(0,0,0,0.05)',
-                                  border: '1px solid #e2e8f0',
-                                  padding: '6px',
-                                  zIndex: 50,
+                    /* Stage-specific action buttons */
+                    (() => {
+                      const isManager = currentUser.role === 'manager';
+                      const isOwner   = req.ownerId === currentUser.id;
+                      const isAssignee = req.assigneeIds.includes(currentUser.id);
+                      const canSubmit  = isAssignee || isOwner || isManager;
+                      const canPost    = isOwner || isManager;
+                      const postedBy   = req.postedBy ?? [];
+                      const ownerPosted = postedBy.includes(req.ownerId);
+                      const managerPosted = users.some(u => u.role === 'manager' && postedBy.includes(u.id));
+
+                      if (req.status === 'Design Progress' && canSubmit) {
+                        if (!reviewFormOpen) {
+                          return (
+                            <button
+                              onClick={() => setReviewFormOpen(true)}
+                              className="px-4 py-2 text-sm font-semibold bg-[#a9674d] hover:bg-[#8a4f39] text-white rounded-lg transition-colors"
+                            >
+                              Submit for review
+                            </button>
+                          );
+                        }
+                        return (
+                          <div className="flex flex-col gap-2 w-80">
+                            <p className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">Submit for review</p>
+                            {/* Link adder */}
+                            <div className="flex gap-1.5">
+                              <input
+                                type="url"
+                                value={reviewLinkInput}
+                                onChange={e => setReviewLinkInput(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') {
+                                    const t = reviewLinkInput.trim();
+                                    if (t && !reviewLinks.includes(t)) { setReviewLinks(prev => [...prev, t]); setReviewLinkInput(''); }
+                                  }
                                 }}
+                                placeholder="Paste file / design link…"
+                                className="flex-1 min-w-0 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
+                              />
+                              <button
+                                onClick={() => {
+                                  const t = reviewLinkInput.trim();
+                                  if (t && !reviewLinks.includes(t)) { setReviewLinks(prev => [...prev, t]); setReviewLinkInput(''); }
+                                }}
+                                className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
                               >
-                                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2.5 py-1.5">Change Progress</div>
-                                {STATUSES.map(s => (
-                                  <button
-                                    key={s}
-                                    onClick={() => {
-                                      setStatus(s);
-                                      setDropdownOpen(false);
-                                    }}
-                                    className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-colors flex items-center justify-between ${
-                                      req.status === s
-                                        ? 'bg-[#f5ece7] text-[#a9674d] font-semibold'
-                                        : 'text-gray-700 hover:bg-gray-50'
-                                    }`}
-                                  >
-                                    {s}
-                                    {req.status === s && (
-                                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                        <path d="M20 6L9 17l-5-5" />
-                                      </svg>
-                                    )}
-                                  </button>
+                                <Plus size={11} /> Add
+                              </button>
+                            </div>
+                            {reviewLinks.length > 0 && (
+                              <div className="flex flex-col gap-1">
+                                {reviewLinks.map((url, i) => (
+                                  <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#f5ece7] rounded-lg border border-[#f0ddd5]">
+                                    <Link size={10} className="text-[#a9674d] flex-shrink-0" />
+                                    <span className="text-[11px] text-[#8a4f39] truncate flex-1">{url}</span>
+                                    <button onClick={() => setReviewLinks(prev => prev.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500 flex-shrink-0">
+                                      <X size={11} />
+                                    </button>
+                                  </div>
                                 ))}
-                              </motion.div>
-                            </>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    </div>
+                              </div>
+                            )}
+                            {/* Handoff note */}
+                            <textarea
+                              value={reviewNote}
+                              onChange={e => setReviewNote(e.target.value)}
+                              placeholder="Handoff note for reviewer… (optional)"
+                              rows={2}
+                              className="w-full px-2.5 py-2 text-xs border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
+                            />
+                            <div className="flex items-center gap-2 justify-end">
+                              <button
+                                onClick={() => { setReviewFormOpen(false); setReviewLinks([]); setReviewLinkInput(''); setReviewNote(''); }}
+                                className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => {
+                                  submitForReview(req.id, reviewLinks, reviewNote);
+                                  setReviewFormOpen(false); setReviewLinks([]); setReviewLinkInput(''); setReviewNote('');
+                                  closeModal(); openModal({ type: 'review-feedback', requestId: req.id });
+                                }}
+                                className="px-3.5 py-1.5 text-xs font-semibold bg-[#a9674d] hover:bg-[#8a4f39] text-white rounded-lg transition-colors flex items-center gap-1.5"
+                              >
+                                <Send size={11} /> Submit for review
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      if (req.status === 'Done' && canPost) {
+                        const alreadyMarked = postedBy.includes(currentUser.id);
+                        return (
+                          <div className="flex flex-col items-end gap-1.5">
+                            <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                              <span className={ownerPosted ? 'text-emerald-600 font-semibold' : 'text-gray-400'}>
+                                {ownerPosted ? '✓' : '○'} Owner
+                              </span>
+                              <span className="text-gray-300">·</span>
+                              <span className={managerPosted ? 'text-emerald-600 font-semibold' : 'text-gray-400'}>
+                                {managerPosted ? '✓' : '○'} Manager
+                              </span>
+                            </div>
+                            {!alreadyMarked ? (
+                              <button
+                                onClick={() => markAsPosted(req.id)}
+                                className="px-4 py-2 text-sm font-semibold bg-[#5b8dd9] hover:bg-[#4a76c0] text-white rounded-lg transition-colors"
+                              >
+                                Mark as Posted
+                              </button>
+                            ) : (
+                              <span className="text-xs text-emerald-600 font-semibold px-3 py-1.5 bg-emerald-50 rounded-lg border border-emerald-100">
+                                ✓ You marked as posted
+                              </span>
+                            )}
+                          </div>
+                        );
+                      }
+
+                      if (req.status === 'Posted' && isManager) {
+                        return (
+                          <button
+                            onClick={() => setStatus('Brief Approval')}
+                            className="px-4 py-2 text-sm font-semibold bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-colors"
+                          >
+                            Reopen Request
+                          </button>
+                        );
+                      }
+
+                      // Manager-only status dropdown for other stages
+                      if (isManager) {
+                        return (
+                          <div className="relative">
+                            <button
+                              onClick={() => setDropdownOpen(!dropdownOpen)}
+                              className="px-3 py-2 text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors flex items-center gap-1.5"
+                            >
+                              Change Status
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <path d="M6 9l6 6 6-6" />
+                              </svg>
+                            </button>
+                            <AnimatePresence>
+                              {dropdownOpen && (
+                                <>
+                                  <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
+                                  <motion.div
+                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                    style={{
+                                      position: 'absolute', bottom: '100%', right: 0,
+                                      marginBottom: '8px', width: '180px', background: '#ffffff',
+                                      borderRadius: '12px', border: '1px solid #e2e8f0', padding: '6px', zIndex: 50,
+                                      boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)',
+                                    }}
+                                  >
+                                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2.5 py-1.5">Override Status</div>
+                                    {STATUSES.map(s => (
+                                      <button key={s} onClick={() => { setStatus(s); setDropdownOpen(false); }}
+                                        className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-colors flex items-center justify-between ${req.status === s ? 'bg-[#f5ece7] text-[#a9674d] font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
+                                      >
+                                        {s}
+                                        {req.status === s && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>}
+                                      </button>
+                                    ))}
+                                  </motion.div>
+                                </>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        );
+                      }
+
+                      return null;
+                    })()
                   )}
                 </>
               )}
@@ -730,7 +956,8 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
               <div className="bg-gray-100 rounded-full p-1 flex items-center gap-0.5 border border-gray-200">
                 {STATUSES.map(s => {
                   const isActive = req.status === s;
-                  return (
+                  const isManager = currentUser.role === 'manager';
+                  return isManager ? (
                     <button
                       key={s}
                       onClick={() => setStatus(s)}
@@ -742,6 +969,17 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                     >
                       {s}
                     </button>
+                  ) : (
+                    <span
+                      key={s}
+                      className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        isActive
+                          ? 'bg-white text-[#a9674d] font-bold shadow-sm'
+                          : 'text-gray-400'
+                      }`}
+                    >
+                      {s}
+                    </span>
                   );
                 })}
               </div>

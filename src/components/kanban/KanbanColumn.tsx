@@ -5,11 +5,12 @@ import KanbanCard from './KanbanCard';
 import { useApp } from '../../context/AppContext';
 
 const STATUS_COLORS: Record<Status, string> = {
-  'To Do':              '#888888',
-  'In Progress':        '#344161',
-  'In Review':          '#747440',
-  'Partially Approved': '#c99d5d',
-  'Done':               '#6f8e7c',
+  'Brief Approval':  '#888888',
+  'Design Progress': '#344161',
+  'Design Review':   '#747440',
+  'Approved':        '#c99d5d',
+  'Done':            '#6f8e7c',
+  'Posted':          '#5b8dd9',
 };
 
 interface KanbanColumnProps {

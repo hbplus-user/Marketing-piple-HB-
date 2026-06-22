@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { isWithinInterval, startOfDay, endOfDay } from 'date-fns';
-import type { BackupSnapshot, ContentRequest, ModalState, Pipeline, Role, User, View } from '../types';
+import type { ActivityLogEntry, AssigneeAcceptance, BackupSnapshot, ContentRequest, ModalState, Pipeline, Role, Status, User, View } from '../types';
 import { USERS, MOCK_REQUESTS } from '../data/mockData';
 import { calcInternalDeadline, getUrgency } from '../utils/deadlineUtils';
 import { canViewAllRequests } from '../utils/permissions';
@@ -14,7 +14,7 @@ import { useAuth } from './AuthContext';
 const AUTO_INTERVAL = 6 * 60 * 60 * 1000;
 
 // Recursively revive ISO date strings in known date fields back to Date objects
-const DATE_FIELDS = new Set(['postDate', 'internalDeadline', 'approvedAt', 'createdAt', 'date']);
+const DATE_FIELDS = new Set(['postDate', 'internalDeadline', 'approvedAt', 'createdAt', 'date', 'timestamp', 'acceptedAt', 'startDate']);
 function reviveObj(obj: unknown): unknown {
   if (obj === null || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) return obj.map(reviveObj);
@@ -28,6 +28,37 @@ function reviveObj(obj: unknown): unknown {
     }
   }
   return result;
+}
+
+// Migrate legacy status names → current names, and backfill new fields added after initial deploy
+const STATUS_MIGRATION: Record<string, Status> = {
+  'To Do':              'Brief Approval',
+  'In Progress':        'Design Progress',
+  'In Review':          'Design Review',
+  'Partially Approved': 'Approved',
+};
+
+const PIPELINE_MIGRATION: Record<string, Pipeline> = {
+  'Content':      'Organic',
+  'Art / Design': 'Internal requirement',
+};
+
+function migrateRequest(r: ContentRequest): ContentRequest {
+  const migratedStatus   = STATUS_MIGRATION[r.status as string]   ?? r.status;
+  const migratedPipeline = PIPELINE_MIGRATION[r.pipeline as string] ?? r.pipeline;
+  return {
+    ...r,
+    status:   migratedStatus,
+    pipeline: migratedPipeline as Pipeline,
+    activityLog:         r.activityLog         ?? [],
+    postedBy:            r.postedBy            ?? [],
+    managerApproved:     r.managerApproved     ?? false,
+    founderApprovalRequired: r.founderApprovalRequired ?? false,
+    founderApproved:     r.founderApproved     ?? false,
+    assigneeAcceptance:  r.assigneeAcceptance  ?? [],
+    submissionLinks:     r.submissionLinks     ?? [],
+    submissionNote:      r.submissionNote      ?? '',
+  };
 }
 
 export interface DateRange {
@@ -44,6 +75,7 @@ interface AppState {
   activeModal: ModalState | null;
   activePipelines: Pipeline[];
   dateRange: DateRange;
+  dateFilterTypes: ('due' | 'post')[];
   backups: BackupSnapshot[];
   backupsLoading: boolean;
   setCurrentUser: (user: User) => void;
@@ -53,6 +85,10 @@ interface AppState {
   updateRequest: (id: string, updates: Partial<ContentRequest>) => void;
   addRequest: (req: ContentRequest) => void;
   approveRequest: (id: string) => void;
+  markAsPosted: (id: string) => void;
+  submitForReview: (id: string, links: string[], note: string) => void;
+  acceptTask: (id: string, startDate?: Date) => void;
+  removeAssignee: (id: string, userId: string) => void;
   requestChanges: (id: string, comment: string, referenceLink?: string) => void;
   editPostDate: (id: string, newDate: Date, reason: string) => void;
   removeCreatorFromApproval: (id: string) => void;
@@ -65,6 +101,7 @@ interface AppState {
   deleteBackup: (backupId: string) => Promise<void>;
   togglePipeline: (p: Pipeline) => void;
   setDateRange: (range: DateRange) => void;
+  toggleDateFilterType: (type: 'due' | 'post') => void;
   clearFilters: () => void;
 }
 
@@ -79,6 +116,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [activeModal, setActiveModal] = useState<ModalState | null>(null);
   const [activePipelines, setActivePipelines] = useState<Pipeline[]>([]);
   const [dateRange, setDateRangeState]        = useState<DateRange>({ start: null, end: null });
+  const [dateFilterTypes, setDateFilterTypesState] = useState<('due' | 'post')[]>(['due', 'post']);
 
   // Guard: only sync to Supabase after we've finished the initial load
   const supabaseReady = useRef(false);
@@ -98,7 +136,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           console.error('[Pipeline] Failed to load requests:', error.message);
           setRequests(MOCK_REQUESTS);
         } else if (data && data.length > 0) {
-          setRequests(data.map(row => reviveObj(row.data) as ContentRequest));
+          setRequests(data.map(row => migrateRequest(reviveObj(row.data) as ContentRequest)));
         } else {
           setRequests([]);
         }
@@ -115,7 +153,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (payload.eventType === 'DELETE') {
             setRequests(prev => prev.filter(r => r.id !== (payload.old as { id: string }).id));
           } else {
-            const incoming = reviveObj((payload.new as { data: unknown }).data) as ContentRequest;
+            const incoming = migrateRequest(reviveObj((payload.new as { data: unknown }).data) as ContentRequest);
             setRequests(prev => {
               const idx = prev.findIndex(r => r.id === incoming.id);
               if (idx >= 0) return prev.map(r => r.id === incoming.id ? incoming : r);
@@ -223,9 +261,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const setDateRange = useCallback((range: DateRange) => setDateRangeState(range), []);
 
+  const toggleDateFilterType = useCallback((type: 'due' | 'post') => {
+    setDateFilterTypesState(prev => {
+      if (prev.includes(type)) {
+        if (prev.length === 1) return prev;
+        return prev.filter(x => x !== type);
+      }
+      return [...prev, type];
+    });
+  }, []);
+
   const clearFilters = useCallback(() => {
     setActivePipelines([]);
     setDateRangeState({ start: null, end: null });
+    setDateFilterTypesState(['due', 'post']);
   }, []);
 
   const filteredRequests = useMemo(() => {
@@ -241,17 +290,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (activePipelines.length > 0) {
       result = result.filter(r => activePipelines.includes(r.pipeline));
     }
-    if (dateRange.start && dateRange.end) {
-      result = result.filter(r =>
-        isWithinInterval(r.postDate, { start: startOfDay(dateRange.start!), end: endOfDay(dateRange.end!) })
-      );
-    } else if (dateRange.start) {
-      result = result.filter(r => r.postDate >= startOfDay(dateRange.start!));
+    if (dateRange.start) {
+      const start = startOfDay(dateRange.start);
+      const end = dateRange.end ? endOfDay(dateRange.end) : null;
+      result = result.filter(r => {
+        const matchesPost = dateFilterTypes.includes('post') && (
+          end ? isWithinInterval(r.postDate, { start, end }) : r.postDate >= start
+        );
+        const matchesDue = dateFilterTypes.includes('due') && (
+          end ? isWithinInterval(r.internalDeadline, { start, end }) : r.internalDeadline >= start
+        );
+        return matchesPost || matchesDue;
+      });
     }
     // Always sort: overdue → urgent → due-soon → on-track
     const urgencyRank = { overdue: 0, urgent: 1, 'due-soon': 2, 'on-track': 3 } as const;
     return [...result].sort((a, b) => urgencyRank[getUrgency(a)] - urgencyRank[getUrgency(b)]);
-  }, [requests, activePipelines, dateRange, currentUser]);
+  }, [requests, activePipelines, dateRange, dateFilterTypes, currentUser]);
 
   const updateRequest = useCallback((id: string, updates: Partial<ContentRequest>) => {
     setRequests(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
@@ -265,23 +320,123 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [authUser]);
 
+  const makeLogEntry = useCallback((
+    type: ActivityLogEntry['type'],
+    fromStatus: Status,
+    toStatus: Status,
+    note?: string,
+  ): ActivityLogEntry => ({
+    id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    type,
+    userId: currentUser.id,
+    timestamp: new Date(),
+    fromStatus,
+    toStatus,
+    note,
+  }), [currentUser.id]);
+
   const approveRequest = useCallback((id: string) => {
+    const now = new Date();
     setRequests(prev => prev.map(r => {
       if (r.id !== id) return r;
+      const isManager = currentUser.role === 'manager';
+      let newStatus: Status = r.status;
+      let newApprovedAt = r.approvedAt;
+
+      if (r.status === 'Design Review') {
+        // Manager approval is always final; owner (non-manager) → partial
+        newStatus = isManager ? 'Done' : 'Approved';
+        newApprovedAt = isManager ? now : null;
+      } else if (r.status === 'Approved') {
+        // Only manager can give final sign-off here
+        if (isManager) { newStatus = 'Done'; newApprovedAt = now; }
+      }
+
       const updatedRounds = r.rounds.map((round, i) =>
         i === r.currentRound ? { ...round, status: 'approved' as const } : round
       );
-      const isManager = currentUser.role === 'manager';
+      const logEntry = makeLogEntry(
+        newStatus === 'Done' ? 'final_approval' : 'partial_approval',
+        r.status, newStatus,
+      );
       return {
         ...r,
-        // Only manager gives final Done; anyone else gives Partially Approved
-        status: isManager ? 'Done' : 'Partially Approved',
-        approvedAt: isManager ? new Date() : null,
+        status: newStatus,
+        approvedAt: newApprovedAt,
         approvedBy: [...r.approvedBy, currentUser.id],
         rounds: updatedRounds,
+        activityLog: [...(r.activityLog ?? []), logEntry],
       };
     }));
-  }, [currentUser.id, currentUser.role]);
+  }, [currentUser.id, currentUser.role, makeLogEntry]);
+
+  const markAsPosted = useCallback((id: string) => {
+    setRequests(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      const newPostedBy = Array.from(new Set([...(r.postedBy ?? []), currentUser.id]));
+      const ownerMarked = newPostedBy.includes(r.ownerId);
+      const managerMarked = users.some(u => u.role === 'manager' && newPostedBy.includes(u.id));
+      const readyToPost = ownerMarked && managerMarked;
+      const newStatus: Status = readyToPost ? 'Posted' : r.status;
+      const logEntry = makeLogEntry('marked_posted', r.status, newStatus);
+      return {
+        ...r,
+        postedBy: newPostedBy,
+        status: newStatus,
+        activityLog: [...(r.activityLog ?? []), logEntry],
+      };
+    }));
+  }, [currentUser.id, makeLogEntry, users]);
+
+  const submitForReview = useCallback((id: string, links: string[], note: string) => {
+    setRequests(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      const logEntry = makeLogEntry('submitted_for_review', r.status, 'Design Review', note || undefined);
+      return {
+        ...r,
+        status: 'Design Review' as const,
+        submissionLinks: links,
+        submissionNote: note,
+        activityLog: [...(r.activityLog ?? []), logEntry],
+      };
+    }));
+  }, [makeLogEntry]);
+
+  const acceptTask = useCallback((id: string, startDate?: Date) => {
+    setRequests(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      if ((r.assigneeAcceptance ?? []).some(a => a.userId === currentUser.id)) return r;
+      const sequence = (r.assigneeAcceptance ?? []).length + 1;
+      const entry: AssigneeAcceptance = {
+        userId: currentUser.id,
+        acceptedAt: new Date(),
+        startDate,
+        sequence,
+      };
+      const logEntry = makeLogEntry('status_change', r.status, r.status, `accepted task (sequence #${sequence})`);
+      return {
+        ...r,
+        assigneeAcceptance: [...(r.assigneeAcceptance ?? []), entry],
+        activityLog: [...(r.activityLog ?? []), logEntry],
+      };
+    }));
+  }, [currentUser.id, makeLogEntry]);
+
+  const removeAssignee = useCallback((id: string, userId: string) => {
+    setRequests(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      const filtered = (r.assigneeAcceptance ?? [])
+        .filter(a => a.userId !== userId)
+        .map((a, i) => ({ ...a, sequence: i + 1 }));
+      const logEntry = makeLogEntry('status_change', r.status, r.status, `removed assignee`);
+      return {
+        ...r,
+        assigneeIds: r.assigneeIds.filter(aid => aid !== userId),
+        assigneeAcceptance: filtered,
+        activityLog: [...(r.activityLog ?? []), logEntry],
+      };
+    }));
+  }, [makeLogEntry]);
 
   const requestChanges = useCallback((id: string, comment: string, referenceLink?: string) => {
     setRequests(prev => prev.map(r => {
@@ -294,9 +449,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         comments: comment ? [{ userId: currentUser.id, text: comment, createdAt: new Date(), referenceLink }] : [],
         status: 'pending' as const,
       };
-      return { ...r, currentRound: r.currentRound + 1, rounds: [...updatedRounds, newRound], status: 'In Progress' as const };
+      const logEntry = makeLogEntry('changes_requested', r.status, 'Design Progress', comment);
+      return {
+        ...r,
+        currentRound: r.currentRound + 1,
+        rounds: [...updatedRounds, newRound],
+        status: 'Design Progress' as const,
+        activityLog: [...(r.activityLog ?? []), logEntry],
+      };
     }));
-  }, [currentUser.id]);
+  }, [currentUser.id, makeLogEntry]);
 
   const editPostDate = useCallback((id: string, newDate: Date, reason: string) => {
     setRequests(prev => prev.map(r => {
@@ -357,7 +519,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const getRestoredRequests = useCallback(async (backupId: string): Promise<ContentRequest[] | null> => {
     const snapshot = backups.find(b => b.id === backupId);
     if (!snapshot) return null;
-    return decompressRequests(snapshot.data);
+    const raw = await decompressRequests(snapshot.data);
+    return raw.map(migrateRequest);
   }, [backups]);
 
   const mergeRestored = useCallback((current: ContentRequest[], incoming: ContentRequest[]) => {
@@ -421,12 +584,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   return (
     <AppContext.Provider value={{
       currentUser, users, requests, filteredRequests, activeView, activeModal,
-      activePipelines, dateRange, backups, backupsLoading,
+      activePipelines, dateRange, dateFilterTypes, backups, backupsLoading,
       setCurrentUser, setActiveView, openModal, closeModal,
-      updateRequest, addRequest, approveRequest, requestChanges,
+      updateRequest, addRequest, approveRequest, markAsPosted,
+      submitForReview, acceptTask, removeAssignee, requestChanges,
       editPostDate, removeCreatorFromApproval, addComment,
       createBackup, restoreAll, restoreByRole, restoreByUser, restoreOne, deleteBackup,
-      togglePipeline, setDateRange, clearFilters,
+      togglePipeline, setDateRange, toggleDateFilterType, clearFilters,
     }}>
       {children}
     </AppContext.Provider>

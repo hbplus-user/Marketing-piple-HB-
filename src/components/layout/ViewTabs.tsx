@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X } from 'lucide-react';
+import { X, Clock, CalendarCheck } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import DateRangePicker from '../shared/DateRangePicker';
 import type { Pipeline, View } from '../../types';
@@ -8,15 +8,14 @@ const TABS: { id: View; label: string }[] = [
   { id: 'kanban',    label: 'Kanban View' },
   { id: 'calendar', label: 'Calendar View' },
   { id: 'gantt',    label: 'Gantt View' },
-  { id: 'redalert', label: 'Red Alert' },
-  { id: 'mytasks',  label: 'My Tasks' },
 ];
 
+
 const PIPELINES: { value: Pipeline; label: string; color: string; bg: string }[] = [
-  { value: 'PM',           label: 'PM',          color: '#344161', bg: '#e8ebf1' },
-  { value: 'Content',      label: 'Content',     color: '#4a6b5c', bg: '#edf2ef' },
-  { value: 'Art / Design', label: 'Art / Design',color: '#a9674d', bg: '#f5ece7' },
-  { value: 'Events',       label: 'Events',      color: '#9a7336', bg: '#f7f1e3' },
+  { value: 'PM',                   label: 'PM',                   color: '#344161', bg: '#e8ebf1' },
+  { value: 'Organic',              label: 'Organic',              color: '#4a6b5c', bg: '#edf2ef' },
+  { value: 'Internal requirement', label: 'Internal requirement', color: '#a9674d', bg: '#f5ece7' },
+  { value: 'Events',               label: 'Events',               color: '#9a7336', bg: '#f7f1e3' },
 ];
 
 export default function ViewTabs() {
@@ -24,6 +23,7 @@ export default function ViewTabs() {
     activeView, setActiveView,
     activePipelines, togglePipeline,
     dateRange, setDateRange,
+    dateFilterTypes, toggleDateFilterType,
     clearFilters,
   } = useApp();
 
@@ -147,8 +147,14 @@ export default function ViewTabs() {
         {/* Divider */}
         <div className="w-px h-5 flex-shrink-0" style={{ background: '#ede0d0' }} />
 
-        {/* Date range picker */}
-        <DateRangePicker value={dateRange} onChange={setDateRange} />
+        {/* Date range filters */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <span className="text-[11px] font-semibold text-[#a89e8e] uppercase tracking-wider mr-1">
+            Filter by
+          </span>
+          <DateRangePicker value={dateRange} onChange={setDateRange} type="post" />
+          <DateRangePicker value={dateRange} onChange={setDateRange} type="due" />
+        </div>
 
         {/* Clear all filters */}
         <AnimatePresence>

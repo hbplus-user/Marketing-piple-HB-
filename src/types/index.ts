@@ -1,6 +1,27 @@
-export type Pipeline = 'PM' | 'Content' | 'Art / Design' | 'Events';
+export type Pipeline = 'PM' | 'Organic' | 'Internal requirement' | 'Events';
 
-export type Status = 'To Do' | 'In Progress' | 'In Review' | 'Partially Approved' | 'Done';
+export type Status = 'Brief Approval' | 'Design Progress' | 'Design Review' | 'Approved' | 'Done' | 'Posted';
+
+export type ActivityLogType =
+  | 'brief_approved'
+  | 'submitted_for_review'
+  | 'partial_approval'
+  | 'final_approval'
+  | 'changes_requested'
+  | 'marked_posted'
+  | 'status_change';
+
+export interface ActivityLogEntry {
+  id: string;
+  type: ActivityLogType;
+  userId: string;
+  timestamp: Date;
+  fromStatus: Status;
+  toStatus: Status;
+  note?: string;
+}
+
+export type Priority = 'high' | 'medium' | 'low';
 
 export type Role = 'employee' | 'manager' | 'founder';
 
@@ -24,6 +45,13 @@ export interface ReviewRound {
     referenceLink?: string;
   }[];
   status: 'pending' | 'approved' | 'changes-requested';
+}
+
+export interface AssigneeAcceptance {
+  userId: string;
+  acceptedAt: Date;
+  startDate?: Date;
+  sequence: number;
 }
 
 export interface ContentRequest {
@@ -51,6 +79,12 @@ export interface ContentRequest {
   managerApproved?: boolean;
   founderApprovalRequired?: boolean;
   founderApproved?: boolean;
+  activityLog: ActivityLogEntry[];
+  postedBy: string[];                     // both owner + a manager must mark posted
+  assigneeAcceptance: AssigneeAcceptance[];
+  submissionLinks: string[];
+  submissionNote: string;
+  priority?: Priority;
 }
 
 export type View = 'kanban' | 'calendar' | 'gantt' | 'redalert' | 'mytasks';

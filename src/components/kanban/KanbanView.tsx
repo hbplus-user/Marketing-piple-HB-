@@ -2,7 +2,7 @@ import { useApp } from '../../context/AppContext';
 import KanbanColumn from './KanbanColumn';
 import type { Status } from '../../types';
 
-const COLUMNS: Status[] = ['To Do', 'In Progress', 'In Review', 'Partially Approved', 'Done'];
+const COLUMNS: Status[] = ['Brief Approval', 'Design Progress', 'Design Review', 'Approved', 'Done', 'Posted'];
 
 export default function KanbanView() {
   const { filteredRequests } = useApp();

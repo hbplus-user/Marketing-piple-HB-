@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { Paperclip, ImageIcon, Link, UserMinus, ShieldCheck } from 'lucide-react';
+import { Paperclip, ImageIcon, Link, ExternalLink, UserMinus, ShieldCheck } from 'lucide-react';
 import Modal from '../shared/Modal';
 import Badge from '../shared/Badge';
 import RoundBadge from '../shared/RoundBadge';
@@ -20,8 +20,14 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
   const userCanRequest    = canRequestChanges(currentUser.role, req, currentUser.id);
   const userCanRemove     = canRemoveCreator(currentUser.role, req, currentUser.id);
   const isManager         = currentUser.role === 'manager';
+  const isOwner           = req.ownerId === currentUser.id;
   const isFull            = isFullApproval(currentUser.role);
   const creatorUser       = users.find(u => u.id === req.requesterId);
+  const inApprovedStage   = req.status === 'Approved';
+  // In the Approved stage only the manager can give final sign-off
+  const canApproveHere    = inApprovedStage ? isManager : userCanApprove;
+  // In the Approved stage both owner and manager can request changes back to Design Progress
+  const canRequestHere    = inApprovedStage ? (isOwner || isManager) : userCanRequest;
 
   const handleApprove = () => {
     approveRequest(req.id);
@@ -67,25 +73,60 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
               </button>
             )}
           </div>
-          <div className="flex-1 flex flex-col items-center justify-center p-8">
-            <div
-              className="w-full max-w-xl aspect-video rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-3"
-              style={{ backgroundImage: 'repeating-linear-gradient(45deg, #f3f4f6 0, #f3f4f6 10px, #f9fafb 0, #f9fafb 50%)' }}
-            >
-              <ImageIcon size={32} className="text-gray-300" />
-              <p className="text-sm text-gray-400 font-medium">Asset preview</p>
-              {req.attachments.length > 0 && (
-                <div className="flex flex-wrap gap-2 justify-center">
-                  {req.attachments.map(a => (
-                    <span key={a} className="flex items-center gap-1 px-2 py-1 bg-white rounded-lg border border-gray-200 text-xs text-gray-500 shadow-sm">
-                      <Paperclip size={10} />
-                      {a}
-                    </span>
+          <div className="flex-1 overflow-y-auto p-6 space-y-5">
+            {/* Submission links */}
+            {(req.submissionLinks ?? []).length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Submitted links</p>
+                <div className="flex flex-col gap-1.5">
+                  {req.submissionLinks.map((url, i) => (
+                    <a
+                      key={i}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-3 py-2 bg-[#f5ece7] rounded-lg border border-[#f0ddd5] text-xs text-[#8a4f39] hover:bg-[#f0ddd5] transition-colors"
+                    >
+                      <ExternalLink size={11} className="flex-shrink-0" />
+                      <span className="truncate flex-1">{url}</span>
+                    </a>
                   ))}
                 </div>
-              )}
+              </div>
+            )}
+
+            {/* Handoff note */}
+            {req.submissionNote && (
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Handoff note</p>
+                <div className="px-3 py-2.5 bg-gray-50 rounded-xl border border-gray-100 text-xs text-gray-700 leading-relaxed whitespace-pre-line">
+                  {req.submissionNote}
+                </div>
+              </div>
+            )}
+
+            {/* Asset preview placeholder */}
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Asset preview</p>
+              <div
+                className="w-full aspect-video rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-3"
+                style={{ backgroundImage: 'repeating-linear-gradient(45deg, #f3f4f6 0, #f3f4f6 10px, #f9fafb 0, #f9fafb 50%)' }}
+              >
+                <ImageIcon size={28} className="text-gray-300" />
+                <p className="text-xs text-gray-400 font-medium">No asset uploaded</p>
+                {req.attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    {req.attachments.map(a => (
+                      <span key={a} className="flex items-center gap-1 px-2 py-1 bg-white rounded-lg border border-gray-200 text-xs text-gray-500 shadow-sm">
+                        <Paperclip size={10} />
+                        {a}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <h3 className="mt-3 text-sm font-semibold text-gray-700">{req.title}</h3>
             </div>
-            <h3 className="mt-4 text-sm font-semibold text-gray-700">{req.title}</h3>
           </div>
         </div>
 
@@ -150,7 +191,7 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
             <textarea
               value={comment}
               onChange={e => setComment(e.target.value)}
-              placeholder={`Comment as ${currentUser.name}â€¦`}
+              placeholder={`Comment as ${currentUser.name}...`}
               rows={2}
               className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
             />
@@ -167,7 +208,7 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
               />
             </div>
 
-            {/* Remove creator from approval â€” manager or owner only */}
+            {/* Remove creator from approval - manager or owner only */}
             {userCanRemove && !req.creatorRemovedFromApproval && creatorUser && (
               <label className="flex items-center gap-2 cursor-pointer group">
                 <button
@@ -187,16 +228,16 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
               </p>
             )}
 
-            {/* Approval context notice */}
-            {userCanApprove && !isFull && (
+            {/* Stage-aware context notices */}
+            {!inApprovedStage && userCanApprove && !isFull && (
               <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-100">
                 <ShieldCheck size={13} className="text-amber-500 mt-0.5 flex-shrink-0" />
                 <p className="text-[11px] text-amber-700 leading-relaxed">
-                  Your approval marks this as <strong>Partially Approved</strong>. Manager sign-off is still required for final completion.
+                  Your approval marks this as <strong>Approved</strong>. Manager sign-off is still required to move to Done.
                 </p>
               </div>
             )}
-            {isManager && (
+            {!inApprovedStage && isManager && (
               <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100">
                 <ShieldCheck size={13} className="text-emerald-500 mt-0.5 flex-shrink-0" />
                 <p className="text-[11px] text-emerald-700">
@@ -204,9 +245,25 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                 </p>
               </div>
             )}
+            {inApprovedStage && isManager && (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100">
+                <ShieldCheck size={13} className="text-emerald-500 mt-0.5 flex-shrink-0" />
+                <p className="text-[11px] text-emerald-700">
+                  This task is <strong>partially approved</strong>. Your approval will mark it as <strong>Done</strong>.
+                </p>
+              </div>
+            )}
+            {inApprovedStage && !isManager && (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-100">
+                <ShieldCheck size={13} className="text-violet-400 mt-0.5 flex-shrink-0" />
+                <p className="text-[11px] text-violet-700">
+                  You've approved this task. Awaiting <strong>manager final sign-off</strong> to move to Done. You can request changes if needed.
+                </p>
+              </div>
+            )}
 
             <div className="flex items-center gap-2">
-              {userCanRequest && (
+              {canRequestHere && (
                 <button
                   onClick={handleRequestChanges}
                   disabled={!comment.trim()}
@@ -215,19 +272,19 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                   Request changes
                 </button>
               )}
-              {userCanApprove && (
+              {canApproveHere && (
                 <button
                   onClick={handleApprove}
                   className={`flex-1 py-2 text-xs font-medium text-white rounded-lg transition-colors ${
-                    isFull
+                    isFull || inApprovedStage
                       ? 'bg-emerald-600 hover:bg-emerald-700'
                       : 'bg-amber-500 hover:bg-amber-600'
                   }`}
                 >
-                  {isFull ? 'Final Approve' : 'Partially Approve'}
+                  {inApprovedStage ? 'Final Approve → Done' : isFull ? 'Final Approve' : 'Partially Approve'}
                 </button>
               )}
-              {!userCanApprove && !userCanRequest && (
+              {!canApproveHere && !canRequestHere && (
                 <p className="text-[11px] text-gray-400 text-center w-full py-1">
                   You can review and comment, but not approve.
                 </p>

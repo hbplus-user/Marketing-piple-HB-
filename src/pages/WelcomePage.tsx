@@ -348,7 +348,7 @@ export default function WelcomePage({ onEnter }: WelcomePageProps) {
         <div style={{ display: 'flex', gap: 10, marginBottom: 28, flexWrap: 'wrap' }}>
           {[
             { c: RUST,  l: '#c4613e', label: 'Requests', count: '12', glow: `${RUST}70` },
-            { c: GOLD,  l: '#d9b478', label: 'In Review', count: '3',  glow: `${GOLD}70` },
+            { c: GOLD,  l: '#d9b478', label: 'Design Review', count: '3',  glow: `${GOLD}70` },
             { c: NAVY,  l: '#4d5e87', label: 'Calendar',  count: '2',  glow: `${NAVY}70` },
           ].map(s => (
             <div

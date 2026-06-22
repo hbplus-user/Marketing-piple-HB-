@@ -5,17 +5,21 @@ import {
   eachDayOfInterval, startOfWeek, endOfWeek, isSameDay,
   isSameMonth, isToday, startOfDay, endOfDay, addDays,
 } from 'date-fns';
-import { CalendarDays, ChevronLeft, ChevronRight, X } from 'lucide-react';
-import type { DateRange } from '../../context/AppContext';
+import { CalendarDays, ChevronLeft, ChevronRight, X, Clock, CalendarCheck } from 'lucide-react';
+import { useApp, type DateRange } from '../../context/AppContext';
 
 interface DateRangePickerProps {
   value: DateRange;
   onChange: (range: DateRange) => void;
+  type?: 'due' | 'post';
 }
 
 const DAY_HEADERS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
-export default function DateRangePicker({ value, onChange }: DateRangePickerProps) {
+export default function DateRangePicker({ value, onChange, type }: DateRangePickerProps) {
+  const context = useApp();
+  const dateFilterTypes = context?.dateFilterTypes ?? [];
+  const toggleDateFilterType = context?.toggleDateFilterType ?? (() => {});
   const [open, setOpen] = useState(false);
   const [month, setMonth] = useState(new Date());
   const [hoverDay, setHoverDay] = useState<Date | null>(null);
@@ -81,18 +85,44 @@ export default function DateRangePicker({ value, onChange }: DateRangePickerProp
     return !!e && isSameDay(day, e);
   };
 
-  const hasValue = value.start !== null;
+  const isActive = type 
+    ? (value.start !== null && dateFilterTypes.includes(type))
+    : value.start !== null;
 
   const label = () => {
-    if (!value.start) return null;
-    if (!value.end) return format(value.start, 'MMM d');
-    if (isSameDay(value.start, value.end)) return format(value.start, 'MMM d');
-    return `${format(value.start, 'MMM d')} – ${format(value.end, 'MMM d')}`;
+    if (!type) {
+      if (!value.start) return 'Date range';
+      if (!value.end || isSameDay(value.start, value.end)) return format(value.start, 'MMM d');
+      return `${format(value.start, 'MMM d')} – ${format(value.end, 'MMM d')}`;
+    }
+
+    const baseText = type === 'due' ? 'Due Date' : 'Post Date';
+    if (!isActive || !value.start) return baseText;
+    
+    if (!value.end || isSameDay(value.start, value.end)) {
+      return `${baseText}  |  ${format(value.start, 'MMM d, yyyy')}`;
+    }
+    return `${baseText}  |  ${format(value.start, 'MMM d, yyyy')} - ${format(value.end, 'MMM d, yyyy')}`;
+  };
+
+  const handleTriggerClick = () => {
+    if (type && !dateFilterTypes.includes(type)) {
+      toggleDateFilterType(type);
+    }
+    setOpen(v => !v);
   };
 
   const clearRange = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onChange({ start: null, end: null });
+    if (type) {
+      if (dateFilterTypes.length > 1) {
+        toggleDateFilterType(type);
+      } else {
+        onChange({ start: null, end: null });
+      }
+    } else {
+      onChange({ start: null, end: null });
+    }
     setTempStart(null);
     setSelecting('start');
   };
@@ -101,32 +131,50 @@ export default function DateRangePicker({ value, onChange }: DateRangePickerProp
     <div ref={containerRef} className="relative" style={{ zIndex: 50 }}>
       {/* Trigger */}
       <button
-        onClick={() => setOpen(v => !v)}
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-all ${
-          hasValue ? 'text-white' : 'text-[#a89e8e] hover:text-[#53372b] hover:border-[#c4b5a4]'
+        onClick={handleTriggerClick}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[12px] font-medium border transition-all cursor-pointer ${
+          isActive 
+            ? type === 'due'
+              ? 'text-[#92400e] bg-[#fef3c7] border-[#f59e0b]/30'
+              : type === 'post'
+                ? 'text-[#1e40af] bg-[#dbeafe] border-[#3b82f6]/30'
+                : 'text-white border-transparent'
+            : 'text-[#a89e8e] bg-white border-[#ede0d0] hover:text-[#53372b]'
         }`}
-        style={hasValue ? {
-          background: 'linear-gradient(160deg, #c47d61 0%, #8a4f39 100%)',
-          border: '1px solid transparent',
-          boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2), 0 3px 10px rgba(169,103,77,0.4)',
-        } : {
-          border: '1px solid #ede0d0',
-          background: 'white',
+        style={isActive ? (
+          type
+            ? {
+                boxShadow: type === 'due'
+                  ? 'inset 0 1px 0 rgba(255,255,255,0.9), 0 1px 4px rgba(245,158,11,0.15)'
+                  : 'inset 0 1px 0 rgba(255,255,255,0.9), 0 1px 4px rgba(59,130,246,0.15)',
+              }
+            : {
+                background: 'linear-gradient(160deg, #c47d61 0%, #8a4f39 100%)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.2), 0 3px 10px rgba(169,103,77,0.4)',
+              }
+        ) : {
           boxShadow: '0 1px 2px rgba(83,55,43,0.06), inset 0 1px 0 rgba(255,255,255,0.8)',
         }}
-        aria-label="Date range filter"
+        aria-label={type ? `${type === 'due' ? 'Due Date' : 'Post Date'} filter` : 'Date range filter'}
         aria-expanded={open}
       >
-        <CalendarDays size={13} className={hasValue ? 'text-[#f5ece7]' : 'text-[#c4b5a4]'} />
-        <span>{label() ?? 'Date range'}</span>
-        {hasValue && (
+        {!type ? (
+          <CalendarDays size={13} className={isActive ? 'text-[#f5ece7]' : 'text-[#c4b5a4]'} />
+        ) : type === 'due' ? (
+          <Clock size={13} className={isActive ? 'text-[#d97706]' : 'text-[#c4b5a4]'} />
+        ) : (
+          <CalendarCheck size={13} className={isActive ? 'text-[#2563eb]' : 'text-[#c4b5a4]'} />
+        )}
+        <span>{label()}</span>
+        {isActive && (
           <span
             onClick={clearRange}
-            className="ml-0.5 flex items-center justify-center w-3.5 h-3.5 rounded-full bg-white/20 hover:bg-white/40 transition-colors cursor-pointer"
+            className="ml-1.5 flex items-center justify-center w-3.5 h-3.5 rounded-full hover:bg-black/5 active:bg-black/10 transition-colors cursor-pointer"
+            style={type ? { color: type === 'due' ? '#92400e' : '#1e40af' } : { color: 'white' }}
             role="button"
             aria-label="Clear date filter"
           >
-            <X size={9} />
+            <X size={10} />
           </span>
         )}
       </button>
@@ -139,7 +187,7 @@ export default function DateRangePicker({ value, onChange }: DateRangePickerProp
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.15 }}
-            className="absolute top-full mt-2 left-0 z-50 rounded-2xl overflow-hidden"
+            className="absolute top-full mt-2 left-0 z-50 rounded-2xl overflow-hidden animate-in fade-in slide-in-from-top-1"
             style={{
               width: 300,
               background: 'white',
@@ -152,7 +200,7 @@ export default function DateRangePicker({ value, onChange }: DateRangePickerProp
               <div className="flex items-center justify-between mb-4">
                 <button
                   onClick={() => setMonth(subMonths(month, 1))}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg text-[#a89e8e] transition-all hover:text-[#53372b]"
+                  className="w-7 h-7 flex items-center justify-center rounded-lg text-[#a89e8e] transition-all hover:text-[#53372b] cursor-pointer"
                   style={{
                     background: 'white',
                     boxShadow: '0 1px 3px rgba(83,55,43,0.09), inset 0 1px 0 rgba(255,255,255,0.9)',
@@ -167,7 +215,7 @@ export default function DateRangePicker({ value, onChange }: DateRangePickerProp
                 </span>
                 <button
                   onClick={() => setMonth(addMonths(month, 1))}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg text-[#a89e8e] transition-all hover:text-[#53372b]"
+                  className="w-7 h-7 flex items-center justify-center rounded-lg text-[#a89e8e] transition-all hover:text-[#53372b] cursor-pointer"
                   style={{
                     background: 'white',
                     boxShadow: '0 1px 3px rgba(83,55,43,0.09), inset 0 1px 0 rgba(255,255,255,0.9)',
@@ -201,7 +249,7 @@ export default function DateRangePicker({ value, onChange }: DateRangePickerProp
                   return (
                     <div
                       key={day.toISOString()}
-                      className={`relative flex items-center justify-center ${inRange ? '' : ''} ${
+                      className={`relative flex items-center justify-center ${
                         rangeStart && !rangeEnd ? 'rounded-l-full' : ''
                       } ${rangeEnd && !rangeStart ? 'rounded-r-full' : ''} ${
                         rangeStart && rangeEnd ? 'rounded-full' : ''
@@ -212,7 +260,7 @@ export default function DateRangePicker({ value, onChange }: DateRangePickerProp
                         onClick={() => handleDayClick(day)}
                         onMouseEnter={() => selecting === 'end' && setHoverDay(day)}
                         onMouseLeave={() => setHoverDay(null)}
-                        className={`w-8 h-8 text-[12px] font-semibold rounded-full flex items-center justify-center transition-all ${
+                        className={`w-8 h-8 text-[12px] font-semibold rounded-full flex items-center justify-center transition-all cursor-pointer ${
                           isSelected
                             ? 'text-white'
                             : todayDay
@@ -270,7 +318,7 @@ export default function DateRangePicker({ value, onChange }: DateRangePickerProp
                       setSelecting('start');
                       setTempStart(null);
                     }}
-                    className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-colors"
+                    className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer"
                     style={{ color: '#a9674d', background: '#f5ece7' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#f0e3db')}
                     onMouseLeave={e => (e.currentTarget.style.background = '#f5ece7')}

@@ -24,7 +24,7 @@ export default function Dashboard() {
 
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <TopBar />
-        <ViewTabs />
+        {['kanban', 'calendar', 'gantt'].includes(activeView) && <ViewTabs />}
         <main className="flex-1 overflow-auto">
           {activeView === 'kanban'    && <KanbanView />}
           {activeView === 'calendar' && <CalendarView />}

@@ -1,11 +1,12 @@
 import type { Status } from '../../types';
 
 const statusConfig: Record<Status, { bg: string; text: string; dot: string }> = {
-  'To Do':              { bg: '#f0eeea', text: '#888888', dot: '#888888' },
-  'In Progress':        { bg: '#e8ebf1', text: '#344161', dot: '#344161' },
-  'In Review':          { bg: '#edf0e8', text: '#4f5c2e', dot: '#747440' },
-  'Partially Approved': { bg: '#f7f1e3', text: '#9a7336', dot: '#c99d5d' },
-  'Done':               { bg: '#edf2ef', text: '#4a6b5c', dot: '#6f8e7c' },
+  'Brief Approval':  { bg: '#f0eeea', text: '#888888', dot: '#888888' },
+  'Design Progress': { bg: '#e8ebf1', text: '#344161', dot: '#344161' },
+  'Design Review':   { bg: '#edf0e8', text: '#4f5c2e', dot: '#747440' },
+  'Approved':        { bg: '#f7f1e3', text: '#9a7336', dot: '#c99d5d' },
+  'Done':            { bg: '#edf2ef', text: '#4a6b5c', dot: '#6f8e7c' },
+  'Posted':          { bg: '#e8f0fb', text: '#2a5eb3', dot: '#5b8dd9' },
 };
 
 export default function StatusChip({ status }: { status: Status }) {

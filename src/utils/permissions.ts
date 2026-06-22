@@ -50,8 +50,8 @@ export function canViewAllRequests(role: Role): boolean {
 
 /** Returns true if the task is approved (or doesn't require further manager/founder approval). */
 export function isTaskApproved(req: ContentRequest): boolean {
-  // If status is already past 'To Do', it's considered approved
-  if (req.status !== 'To Do') return true;
+  // If status is already past 'Brief Approval', it's considered approved
+  if (req.status !== 'Brief Approval') return true;
 
   // Check new fields if they exist
   if (req.managerApproved !== undefined) {
