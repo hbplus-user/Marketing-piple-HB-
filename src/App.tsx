@@ -15,8 +15,11 @@ function AppShell() {
   useEffect(() => {
     if (!session) {
       setAppPhase('auth');
+    } else if (appPhase === 'auth') {
+      // Session restored on page refresh — show welcome page bird's-eye view
+      setAppPhase('welcome');
     }
-  }, [session]);
+  }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return (
@@ -44,9 +47,9 @@ function AppShell() {
     );
   }
 
-  return (
-    <AnimatePresence mode="wait">
-      {appPhase === 'auth' && (
+  if (!session) {
+    return (
+      <AnimatePresence mode="wait">
         <motion.div
           key="auth"
           initial={{ opacity: 0 }}
@@ -57,33 +60,38 @@ function AppShell() {
         >
           <LoginPage onEnterDashboard={() => setAppPhase('welcome')} />
         </motion.div>
-      )}
-      {appPhase === 'welcome' && (
-        <motion.div
-          key="welcome"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.45 }}
-          style={{ width: '100%', minHeight: '100vh' }}
-        >
-          <WelcomePage onEnter={() => setAppPhase('dashboard')} />
-        </motion.div>
-      )}
-      {appPhase === 'dashboard' && (
-        <motion.div
-          key="dashboard"
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45 }}
-          style={{ height: '100vh' }}
-        >
-          <AppProvider>
+      </AnimatePresence>
+    );
+  }
+
+  return (
+    <AppProvider>
+      <AnimatePresence mode="wait">
+        {appPhase === 'welcome' && (
+          <motion.div
+            key="welcome"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.45 }}
+            style={{ width: '100%', minHeight: '100vh' }}
+          >
+            <WelcomePage onEnter={() => setAppPhase('dashboard')} />
+          </motion.div>
+        )}
+        {appPhase === 'dashboard' && (
+          <motion.div
+            key="dashboard"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45 }}
+            style={{ height: '100vh' }}
+          >
             <Dashboard />
-          </AppProvider>
-        </motion.div>
-      )}
-    </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </AppProvider>
   );
 }
 

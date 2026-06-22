@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Clock, CalendarCheck } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import DateRangePicker from '../shared/DateRangePicker';
 import type { Pipeline, View } from '../../types';
@@ -23,7 +23,6 @@ export default function ViewTabs() {
     activeView, setActiveView,
     activePipelines, togglePipeline,
     dateRange, setDateRange,
-    dateFilterTypes, toggleDateFilterType,
     clearFilters,
   } = useApp();
 

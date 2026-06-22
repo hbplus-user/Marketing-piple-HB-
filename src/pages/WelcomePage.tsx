@@ -1,6 +1,9 @@
 import React, { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
+import { useApp } from '../context/AppContext';
+import { getUrgency } from '../utils/deadlineUtils';
+import { differenceInDays, startOfDay } from 'date-fns';
 
 interface WelcomePageProps {
   onEnter: () => void;
@@ -187,6 +190,7 @@ function Confetti({ p }: { p: CShape }) {
 ══════════════════════════════════════════════════ */
 export default function WelcomePage({ onEnter }: WelcomePageProps) {
   const { user } = useAuth();
+  const { requests, currentUser } = useApp();
 
   const firstName = user?.user_metadata?.full_name?.split(' ')[0] ?? user?.email?.split('@')[0] ?? 'there';
   const initials  = user?.user_metadata?.full_name
@@ -346,35 +350,99 @@ export default function WelcomePage({ onEnter }: WelcomePageProps) {
 
         {/* Service chips — brand colors */}
         <div style={{ display: 'flex', gap: 10, marginBottom: 28, flexWrap: 'wrap' }}>
-          {[
-            { c: RUST,  l: '#c4613e', label: 'Requests', count: '12', glow: `${RUST}70` },
-            { c: GOLD,  l: '#d9b478', label: 'Design Review', count: '3',  glow: `${GOLD}70` },
-            { c: NAVY,  l: '#4d5e87', label: 'Calendar',  count: '2',  glow: `${NAVY}70` },
-          ].map(s => (
-            <div
-              key={s.label}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 8,
-                background: clayBg(s.c, s.l, s.c + 'cc'),
-                borderRadius: 50, padding: '9px 16px 9px 12px',
-                boxShadow: `0 7px 20px ${s.glow}, inset 0 2px 4px rgba(255,255,255,0.46), inset 0 -2px 4px rgba(0,0,0,0.10)`,
-                color: '#fff', fontSize: 13, fontWeight: 700,
-              }}
-            >
-              <span style={{
-                width: 8, height: 8, borderRadius: '50%',
-                background: 'rgba(255,255,255,0.88)', display: 'inline-block',
-                boxShadow: '0 0 5px rgba(255,255,255,0.7)',
-              }} />
-              {s.label}
-              <span style={{
-                background: 'rgba(255,255,255,0.24)', borderRadius: 20,
-                padding: '1px 8px', fontSize: 11, fontWeight: 800,
-              }}>
-                {s.count}
-              </span>
-            </div>
-          ))}
+          {(() => {
+            const isManagerOrFounder = currentUser.role === 'manager' || currentUser.role === 'founder';
+            const todayStart = startOfDay(new Date());
+
+            const overdueCount = requests.filter(r => {
+              if (r.status === 'Done' || r.status === 'Posted') return false;
+              if (!isManagerOrFounder && !r.assigneeIds.includes(currentUser.id)) return false;
+              return getUrgency(r) === 'overdue';
+            }).length;
+
+            const nearDueCount = requests.filter(r => {
+              if (r.status === 'Done' || r.status === 'Posted') return false;
+              if (!isManagerOrFounder && !r.assigneeIds.includes(currentUser.id)) return false;
+              const urgency = getUrgency(r);
+              return urgency === 'urgent' || urgency === 'due-soon';
+            }).length;
+
+            const nearPostCount = requests.filter(r => {
+              if (r.status === 'Done' || r.status === 'Posted') return false;
+              if (!isManagerOrFounder && !r.assigneeIds.includes(currentUser.id)) return false;
+              const diff = differenceInDays(startOfDay(r.postDate), todayStart);
+              return diff >= 0 && diff <= 2;
+            }).length;
+
+            let chips = [];
+            if (isManagerOrFounder) {
+              const pendingManagerApproval = requests.filter(r => r.status === 'Brief Approval' && !r.managerApproved);
+              const pendingFounderApproval = currentUser.role === 'founder'
+                ? requests.filter(r => r.status === 'Brief Approval' && r.managerApproved === true && r.founderApprovalRequired === true && r.founderApproved === false)
+                : [];
+              const pendingCoApproval = requests.filter(r => r.status === 'Design Review' && (r.reviewerIds ?? []).includes(currentUser.id) && !(r.approvedBy ?? []).includes(currentUser.id));
+              const needToApproveCount = pendingManagerApproval.length + pendingFounderApproval.length + pendingCoApproval.length;
+
+              chips = [
+                { c: RUST,  l: '#c4613e', label: 'Need to Approve', count: needToApproveCount, glow: `${RUST}70` },
+                { c: GOLD,  l: '#d9b478', label: 'Overdue', count: overdueCount, glow: `${GOLD}70` },
+                { c: NAVY,  l: '#4d5e87', label: 'Near to Due', count: nearDueCount, glow: `${NAVY}70` },
+                { c: SAGE,  l: '#8db09e', label: 'Near to Post', count: nearPostCount, glow: `${SAGE}70` },
+              ];
+            } else {
+              const inReviewCount = requests.filter(r => r.assigneeIds.includes(currentUser.id) && r.status === 'Design Review').length;
+              const reRequestCount = requests.filter(r => r.assigneeIds.includes(currentUser.id) && r.status === 'Design Progress' && r.rounds.some(rd => rd.status === 'changes-requested')).length;
+
+              chips = [
+                { c: RUST,  l: '#c4613e', label: 'Overdue', count: overdueCount, glow: `${RUST}70` },
+                { c: GOLD,  l: '#d9b478', label: 'Near Due', count: nearDueCount, glow: `${GOLD}70` },
+                { c: NAVY,  l: '#4d5e87', label: 'Near to Post', count: nearPostCount, glow: `${NAVY}70` },
+                { c: SAGE,  l: '#8db09e', label: 'In Review', count: inReviewCount, glow: `${SAGE}70` },
+                { c: TERRA, l: '#c47d61', label: 'Re-request', count: reRequestCount, glow: `${TERRA}70` },
+              ];
+            }
+
+            return chips.map(s => (
+              <div
+                key={s.label}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  background: clayBg(s.c, s.l, s.c + 'cc'),
+                  borderRadius: 50,
+                  padding: '9px 16px 9px 12px',
+                  boxShadow: `0 7px 20px ${s.glow}, inset 0 2px 4px rgba(255,255,255,0.46), inset 0 -2px 4px rgba(0,0,0,0.10)`,
+                  color: '#fff',
+                  fontSize: 13,
+                  fontWeight: 700,
+                }}
+              >
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: 'rgba(255,255,255,0.88)',
+                    display: 'inline-block',
+                    boxShadow: '0 0 5px rgba(255,255,255,0.7)',
+                  }}
+                />
+                {s.label}
+                <span
+                  style={{
+                    background: 'rgba(255,255,255,0.24)',
+                    borderRadius: 20,
+                    padding: '1px 8px',
+                    fontSize: 11,
+                    fontWeight: 800,
+                  }}
+                >
+                  {s.count}
+                </span>
+              </div>
+            ));
+          })()}
         </div>
 
         {/* CTA button — terracotta */}
