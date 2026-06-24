@@ -6,6 +6,7 @@ import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 import { calcInternalDeadline, daysToDeadline } from '../../utils/deadlineUtils';
 import type { Pipeline } from '../../types';
+import CategoryPicker from '../shared/CategoryPicker';
 
 const PIPELINES: { value: Pipeline; label: string; desc: string; color: string }[] = [
   { value: 'PM',                   label: 'PM',                   desc: 'Strategy & briefs',    color: '#344161' },
@@ -23,6 +24,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
   const [postDate, setPostDate]   = useState('');
   const [internalDeadlineStr, setInternalDeadlineStr] = useState('');
   const [daysNeeded, setDaysNeeded] = useState(3);
+  const [category, setCategory]     = useState('');
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [linkInput, setLinkInput]   = useState('');
   const [referenceLinks, setReferenceLinks] = useState<string[]>([]);
@@ -63,7 +65,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
   const showRedAlert = dtd !== null && dtd < daysNeeded;
 
   const reset = () => {
-    setTitle(''); setBrief(''); setPipeline(null);
+    setTitle(''); setBrief(''); setPipeline(null); setCategory('');
     setPostDate(''); setInternalDeadlineStr(''); setDaysNeeded(3);
     setAssigneeIds([]); setLinkInput(''); setReferenceLinks([]);
   };
@@ -108,6 +110,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
       assigneeAcceptance: [],
       submissionLinks: [],
       submissionNote: '',
+      category: pipeline === 'Organic' ? (category || null) : null,
     });
     reset();
     closeModal();
@@ -192,7 +195,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
             {PIPELINES.map(p => (
               <button
                 key={p.value}
-                onClick={() => setPipeline(p.value)}
+                onClick={() => { setPipeline(p.value); if (p.value !== 'Organic') setCategory(''); }}
                 className={`flex items-start gap-3 p-3 rounded-xl border-2 text-left transition-all ${
                   pipeline === p.value
                     ? 'border-[#a9674d] bg-[#f5ece7]'
@@ -208,6 +211,21 @@ export default function NewRequestModal({ open }: { open: boolean }) {
             ))}
           </div>
         </div>
+
+        {/* Category — Organic only */}
+        {pipeline === 'Organic' && (
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+              Category
+              <span className="ml-1.5 text-gray-400 font-normal">— optional</span>
+            </label>
+            <CategoryPicker
+              value={category}
+              onChange={setCategory}
+              isManager={currentUser.role === 'manager' || currentUser.role === 'founder'}
+            />
+          </div>
+        )}
 
         {/* Dates */}
         <div className="grid grid-cols-2 gap-4">

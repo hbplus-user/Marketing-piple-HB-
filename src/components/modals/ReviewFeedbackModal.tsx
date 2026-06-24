@@ -10,42 +10,49 @@ import { canApprove, canRequestChanges, canRemoveCreator, canEditPostDate } from
 
 export default function ReviewFeedbackModal({ open, requestId }: { open: boolean; requestId?: string }) {
   const { requests, closeModal, approveRequest, requestChanges, removeCreatorFromApproval, currentUser, openModal, users } = useApp();
-  const [comment, setComment] = useState('');
-  const [refLink, setRefLink] = useState('');
+  const [comment, setComment]           = useState('');
+  const [refLink, setRefLink]           = useState('');
+  const [requireFounder, setRequireFounder] = useState(false);
 
   const req = requests.find(r => r.id === requestId);
   if (!req) return null;
 
-  const userCanApprove    = canApprove(currentUser.role, req, currentUser.id);
-  const userCanRequest    = canRequestChanges(currentUser.role, req, currentUser.id);
-  const userCanRemove     = canRemoveCreator(currentUser.role, req, currentUser.id);
-  const isManager         = currentUser.role === 'manager';
-  const isOwner           = req.ownerId === currentUser.id;
-  const creatorUser       = users.find(u => u.id === req.requesterId);
-  const inApprovedStage   = req.status === 'Approved';
-  // In the Approved stage both owner and manager can request changes back to Design Progress
-  const canRequestHere    = inApprovedStage ? (isOwner || isManager) : userCanRequest;
+  const userCanApprove  = canApprove(currentUser.role, req, currentUser.id);
+  const userCanRequest  = canRequestChanges(currentUser.role, req, currentUser.id);
+  const userCanRemove   = canRemoveCreator(currentUser.role, req, currentUser.id);
+  const isManager       = currentUser.role === 'manager';
+  const isFounder       = currentUser.role === 'founder';
+  const isOwner         = req.ownerId === currentUser.id;
+  const creatorUser     = users.find(u => u.id === req.requesterId);
+  const inApprovedStage = req.status === 'Approved';
+  const canRequestHere  = inApprovedStage ? (isOwner || isManager) : userCanRequest;
+
+  // Founders in the Approved stage — they can give final sign-off
+  const founderCanFinalize = isFounder && inApprovedStage;
 
   const handleApprove = () => {
-    approveRequest(req.id);
+    const id = req.id;
+    const rf = isManager ? requireFounder : false;
+    setRequireFounder(false);
     closeModal();
+    approveRequest(id, rf);
   };
 
   const handleRequestChanges = () => {
     if (!comment.trim()) return;
-    requestChanges(req.id, comment.trim(), refLink.trim() || undefined);
+    const id = req.id;
+    const c  = comment.trim();
+    const rl = refLink.trim() || undefined;
     setComment('');
     setRefLink('');
     closeModal();
-  };
-
-  const handleRemoveCreator = () => {
-    removeCreatorFromApproval(req.id);
+    requestChanges(id, c, rl);
   };
 
   return (
     <Modal open={open} onClose={closeModal} size="full">
       <div className="flex h-[75vh]">
+
         {/* Left: asset preview */}
         <div className="flex-[3] border-r border-gray-100 flex flex-col">
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 w-full">
@@ -70,6 +77,7 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
               </button>
             )}
           </div>
+
           <div className="flex-1 overflow-y-auto p-6 space-y-5">
             {/* Submission links */}
             {(req.submissionLinks ?? []).length > 0 && (
@@ -205,18 +213,16 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
               />
             </div>
 
-            {/* Remove creator from approval - manager or owner only */}
+            {/* Remove creator from approval chain */}
             {userCanRemove && !req.creatorRemovedFromApproval && creatorUser && (
-              <label className="flex items-center gap-2 cursor-pointer group">
-                <button
-                  type="button"
-                  onClick={handleRemoveCreator}
-                  className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-red-600 transition-colors"
-                >
-                  <UserMinus size={12} />
-                  Remove {creatorUser.name} from approval chain
-                </button>
-              </label>
+              <button
+                type="button"
+                onClick={() => { removeCreatorFromApproval(req.id); }}
+                className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-red-600 transition-colors"
+              >
+                <UserMinus size={12} />
+                Remove {creatorUser.name} from approval chain
+              </button>
             )}
             {req.creatorRemovedFromApproval && creatorUser && (
               <p className="flex items-center gap-1.5 text-[11px] text-gray-400">
@@ -225,20 +231,50 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
               </p>
             )}
 
-            {/* Stage-aware context notices */}
-            {req.status === 'Design Review' && userCanApprove && (
+            {/* Require Founder Approval — manager only, Design Review stage */}
+            {req.status === 'Design Review' && isManager && (
+              <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-2 rounded-lg bg-violet-50 border border-violet-100 hover:bg-violet-100 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={requireFounder}
+                  onChange={e => setRequireFounder(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded accent-violet-600 cursor-pointer"
+                />
+                <ShieldCheck size={13} className="text-violet-500 flex-shrink-0" />
+                <span className="text-[12px] font-semibold text-violet-700">Require Founder Approval</span>
+              </label>
+            )}
+
+            {/* Context notices */}
+            {req.status === 'Design Review' && userCanApprove && !requireFounder && (
               <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100">
                 <ShieldCheck size={13} className="text-emerald-500 mt-0.5 flex-shrink-0" />
                 <p className="text-[11px] text-emerald-700">
-                  Your approval marks this request as <strong>Approved</strong>.
+                  Your approval will mark this as <strong>Done</strong>.
                 </p>
               </div>
             )}
-            {req.status === 'Approved' && (
+            {req.status === 'Design Review' && isManager && requireFounder && (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-100">
+                <ShieldCheck size={13} className="text-violet-500 mt-0.5 flex-shrink-0" />
+                <p className="text-[11px] text-violet-700">
+                  Task will move to <strong>Approved</strong> — founder must give final sign-off before Done.
+                </p>
+              </div>
+            )}
+            {inApprovedStage && !founderCanFinalize && (
               <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-100">
                 <ShieldCheck size={13} className="text-violet-400 mt-0.5 flex-shrink-0" />
                 <p className="text-[11px] text-violet-700">
-                  This task has been <strong>Approved</strong>. It can now be marked as posted from the task details view.
+                  Waiting for <strong>founder sign-off</strong> before this can be marked Done.
+                </p>
+              </div>
+            )}
+            {founderCanFinalize && (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100">
+                <ShieldCheck size={13} className="text-emerald-500 mt-0.5 flex-shrink-0" />
+                <p className="text-[11px] text-emerald-700">
+                  Your approval will mark this as <strong>Done</strong>.
                 </p>
               </div>
             )}
@@ -253,20 +289,38 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                   Request changes
                 </button>
               )}
+
+              {/* Approve Design — Design Review stage */}
               {req.status === 'Design Review' && userCanApprove && (
                 <button
                   onClick={handleApprove}
-                  className="flex-1 py-2 text-xs font-medium text-white rounded-lg transition-colors bg-emerald-600 hover:bg-emerald-700"
+                  className={`flex-1 py-2 text-xs font-medium text-white rounded-lg transition-colors ${
+                    requireFounder
+                      ? 'bg-violet-600 hover:bg-violet-700'
+                      : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
                 >
-                  Approve Design
+                  {requireFounder ? 'Approve & Assign Founder' : 'Approve Design'}
                 </button>
               )}
-              {req.status === 'Approved' && (
-                <p className="text-[11px] text-emerald-600 font-semibold text-center w-full py-1">
-                  ✓ Task Approved
+
+              {/* Founder final sign-off — Approved stage */}
+              {founderCanFinalize && (
+                <button
+                  onClick={handleApprove}
+                  className="flex-1 py-2 text-xs font-medium text-white rounded-lg bg-emerald-600 hover:bg-emerald-700 transition-colors"
+                >
+                  Final Approve
+                </button>
+              )}
+
+              {inApprovedStage && !founderCanFinalize && !isManager && (
+                <p className="text-[11px] text-violet-600 font-semibold text-center w-full py-1">
+                  ⏳ Awaiting founder sign-off
                 </p>
               )}
-              {req.status !== 'Approved' && !userCanApprove && !canRequestHere && (
+
+              {req.status !== 'Approved' && req.status !== 'Design Review' && !userCanApprove && !canRequestHere && (
                 <p className="text-[11px] text-gray-400 text-center w-full py-1">
                   You can review and comment, but not approve.
                 </p>

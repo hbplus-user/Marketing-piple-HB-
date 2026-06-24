@@ -1,18 +1,17 @@
 import { useRef, useMemo } from 'react';
 import { addDays, subDays, format, isSameDay, differenceInDays, startOfDay } from 'date-fns';
 import { useApp } from '../../context/AppContext';
-import { isRedAlert } from '../../utils/deadlineUtils';
 import { canViewAllRequests } from '../../utils/permissions';
 import type { Pipeline } from '../../types';
 
 /* ─── layout ─── */
 const LEFT_W  = 220;
 const DAY_W   = 44;
-const ROW_H   = 84;
+const ROW_H   = 48;
 const HDR_H   = 74;
 const NUM_DAYS = 21;
-const BAR_TOP  = 18;
-const BAR_H    = 24;
+const BAR_TOP  = 14;
+const BAR_H    = 20;
 
 const CLR: Record<Pipeline, { bar: string; post: string; bg: string }> = {
   'PM':                   { bar: '#2d3e6b', post: '#8ca0d0', bg: '#e8ebf1' },
@@ -34,12 +33,12 @@ function monthGroups(days: Date[]) {
 }
 
 export default function GanttView() {
-  const { requests: allRequests, openModal, dateRange, activePipelines, currentUser } = useApp();
+  const { requests: allRequests, openModal, dateRange, dateFilterTypes, activePipelines, currentUser } = useApp();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
 
-  /* Role + pipeline filter only — Gantt manages its own time window */
+  /* Role + pipeline + date filter */
   const requests = useMemo(() => {
     let r = allRequests;
     if (!canViewAllRequests(currentUser.role)) {
@@ -49,8 +48,18 @@ export default function GanttView() {
       );
     }
     if (activePipelines.length > 0) r = r.filter(x => activePipelines.includes(x.pipeline));
+    if (dateRange.start) {
+      const lo = startOfDay(dateRange.start);
+      const hi = dateRange.end ? startOfDay(dateRange.end) : lo;
+      const inRange = (d: Date | null | undefined) => !!d && d >= lo && d <= hi;
+      r = r.filter(x => {
+        const matchPost = dateFilterTypes.includes('post') && inRange(x.postDate);
+        const matchDue  = dateFilterTypes.includes('due')  && inRange(x.internalDeadline);
+        return matchPost || matchDue;
+      });
+    }
     return r;
-  }, [allRequests, activePipelines, currentUser]);
+  }, [allRequests, activePipelines, dateRange, dateFilterTypes, currentUser]);
 
   const windowStart = useMemo(() =>
     dateRange.start ? startOfDay(dateRange.start) : subDays(today, 4),
@@ -113,8 +122,7 @@ export default function GanttView() {
                       className="flex flex-col justify-center px-5 border-b cursor-pointer hover:bg-gray-50/80 transition-colors"
                       style={{ height: ROW_H, borderColor: '#f3f3f3' }}
                     >
-                      <span className="text-[10px] font-mono text-gray-400 mb-1">{req.id}</span>
-                      <span className="text-[13px] font-bold text-gray-800 truncate leading-tight">{req.title}</span>
+                      <span className="text-[13px] font-semibold text-gray-800 truncate leading-tight">{req.title}</span>
                     </div>
                   ))}
                 </div>
@@ -208,27 +216,28 @@ export default function GanttView() {
 
                   {/* Task rows */}
                   {reqs.map(req => {
-                    const alert = isRedAlert(req);
-
                     /*
-                     * ONE unified bar: [createdAt ──── dark ──── internalDeadline ── light ──── postDate]
-                     * x0 = left edge of createdAt column
-                     * x1 = left edge of internalDeadline column  (the color split)
-                     * x2 = right edge of postDate column
-                     *
-                     * Both segments live inside a single <button> so there is zero gap.
+                     * Filter-aware bar:
+                     *   Due only  → dark bar from createdAt → internalDeadline
+                     *   Post only → light bar from internalDeadline → postDate
+                     *   All       → full dual-color bar
                      */
                     const x0 = px(req.createdAt);
                     const x1 = px(req.internalDeadline);
                     const x2 = pxEnd(req.postDate);
 
-                    const totalW = x2 - x0;
-                    const darkW  = x1 - x0;
-                    const lightW = x2 - x1;
-                    const hasBar = totalW > 0;
+                    const dueOnly  = dateFilterTypes.length === 1 && dateFilterTypes.includes('due');
+                    const postOnly = dateFilterTypes.length === 1 && dateFilterTypes.includes('post');
 
-                    const showDue  = inWin(req.internalDeadline);
-                    const showPost = inWin(req.postDate) && !isSameDay(req.internalDeadline, req.postDate);
+                    // Bar position + width changes per filter mode
+                    const barLeft  = postOnly ? x1 : x0;
+                    const barWidth = postOnly ? (x2 - x1) : dueOnly ? (x1 - x0) : (x2 - x0);
+                    const darkW    = dueOnly  ? barWidth : postOnly ? 0 : (x1 - x0);
+                    const lightW   = postOnly ? barWidth : dueOnly  ? 0 : (x2 - x1);
+                    const hasBar   = barWidth > 0;
+
+                    const showDue  = inWin(req.internalDeadline) && dateFilterTypes.includes('due');
+                    const showPost = inWin(req.postDate) && !isSameDay(req.internalDeadline, req.postDate) && dateFilterTypes.includes('post');
 
                     return (
                       <div
@@ -267,14 +276,12 @@ export default function GanttView() {
                             onClick={() => openModal({ type: 'designer-task', requestId: req.id })}
                             className="absolute z-10 overflow-hidden focus:outline-none hover:brightness-95 transition-[filter] cursor-pointer"
                             style={{
-                              left:         x0,
-                              width:        totalW,
+                              left:         barLeft,
+                              width:        barWidth,
                               top:          BAR_TOP,
                               height:       BAR_H,
                               borderRadius: 6,
-                              boxShadow:    alert
-                                ? `0 0 0 2px #ef4444, 0 2px 8px rgba(0,0,0,0.15)`
-                                : `0 2px 8px rgba(0,0,0,0.12)`,
+                              boxShadow: `0 2px 8px rgba(0,0,0,0.12)`,
                             }}
                             aria-label={req.title}
                           >
@@ -295,46 +302,38 @@ export default function GanttView() {
                           </button>
                         )}
 
-                        {/* Due date label */}
+                        {/* Due date label — sits above bar at boundary */}
                         {showDue && (
                           <span
                             className="absolute z-30 pointer-events-none select-none"
                             style={{
-                              left:         pxMid(req.internalDeadline),
-                              top:          BAR_TOP + BAR_H + 6,
-                              transform:    'translateX(-50%)',
-                              fontSize:     10,
-                              fontWeight:   700,
-                              color:        '#92400e',
-                              background:   '#fffbeb',
-                              border:       '1.5px solid #fcd34d',
-                              borderRadius: 4,
-                              padding:      '2px 6px',
-                              whiteSpace:   'nowrap',
-                              lineHeight:   '15px',
+                              left:       pxMid(req.internalDeadline),
+                              top:        BAR_TOP - 13,
+                              transform:  'translateX(-50%)',
+                              fontSize:   9,
+                              fontWeight: 700,
+                              color:      '#92400e',
+                              whiteSpace: 'nowrap',
+                              letterSpacing: '0.01em',
                             }}
                           >
                             Due {format(req.internalDeadline, 'MMM d')}
                           </span>
                         )}
 
-                        {/* Post date label */}
+                        {/* Post date label — sits above bar at right end */}
                         {showPost && (
                           <span
                             className="absolute z-30 pointer-events-none select-none"
                             style={{
-                              left:         pxMid(req.postDate),
-                              top:          BAR_TOP + BAR_H + 6,
-                              transform:    'translateX(-50%)',
-                              fontSize:     10,
-                              fontWeight:   700,
-                              color:        '#374151',
-                              background:   '#ffffff',
-                              border:       '1.5px solid #d1d5db',
-                              borderRadius: 4,
-                              padding:      '2px 6px',
-                              whiteSpace:   'nowrap',
-                              lineHeight:   '15px',
+                              left:       pxMid(req.postDate),
+                              top:        BAR_TOP - 13,
+                              transform:  'translateX(-50%)',
+                              fontSize:   9,
+                              fontWeight: 700,
+                              color:      '#374151',
+                              whiteSpace: 'nowrap',
+                              letterSpacing: '0.01em',
                             }}
                           >
                             Post {format(req.postDate, 'MMM d')}
@@ -353,20 +352,15 @@ export default function GanttView() {
 
       {/* ── Bottom legend + info ── */}
       <div className="bg-white border-t flex-shrink-0 px-6 py-4 flex flex-col gap-3" style={{ borderColor: '#e8e8e8' }}>
-        <div className="flex items-center gap-6 flex-wrap">
-          {PIPELINES.filter(p => requests.some(r => r.pipeline === p)).flatMap(p => {
-            const c = CLR[p];
-            return [
-              <div key={`${p}-d`} className="flex items-center gap-2 text-[11px] text-gray-500 font-medium">
-                <span className="w-4 h-4 rounded-sm flex-shrink-0" style={{ background: c.bar }} />
-                Due Date (Start – Due)
-              </div>,
-              <div key={`${p}-p`} className="flex items-center gap-2 text-[11px] text-gray-500 font-medium">
-                <span className="w-4 h-4 rounded-sm flex-shrink-0" style={{ background: c.post }} />
-                Post Date (Due – Post)
-              </div>,
-            ];
-          })}
+        <div className="flex items-center gap-5 flex-wrap">
+          <div className="flex items-center gap-2 text-[11px] text-gray-500 font-medium">
+            <span className="w-10 h-3 rounded-sm flex-shrink-0 bg-[#2d3e6b]" />
+            Due Date (dark)
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-gray-500 font-medium">
+            <span className="w-10 h-3 rounded-sm flex-shrink-0 bg-[#8ca0d0]" />
+            Post Date (light)
+          </div>
         </div>
 
         <div

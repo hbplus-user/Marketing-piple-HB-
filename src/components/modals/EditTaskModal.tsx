@@ -6,6 +6,7 @@ import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 import { calcInternalDeadline } from '../../utils/deadlineUtils';
 import type { Pipeline } from '../../types';
+import CategoryPicker from '../shared/CategoryPicker';
 
 const PIPELINES: { value: Pipeline; label: string; desc: string; color: string }[] = [
   { value: 'PM',                   label: 'PM',                   desc: 'Strategy & briefs',    color: '#344161' },
@@ -15,7 +16,7 @@ const PIPELINES: { value: Pipeline; label: string; desc: string; color: string }
 ];
 
 export default function EditTaskModal({ open, requestId }: { open: boolean; requestId?: string }) {
-  const { requests, closeModal, updateRequest, users } = useApp();
+  const { requests, closeModal, updateRequest, users, currentUser } = useApp();
   const req = requests.find(r => r.id === requestId);
 
   const [title, setTitle]           = useState('');
@@ -24,6 +25,7 @@ export default function EditTaskModal({ open, requestId }: { open: boolean; requ
   const [postDate, setPostDate]     = useState('');
   const [internalDeadlineStr, setInternalDeadlineStr] = useState('');
   const [daysNeeded, setDaysNeeded] = useState(3);
+  const [category, setCategory]     = useState('');
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
   const [linkInput, setLinkInput]   = useState('');
   const [referenceLinks, setReferenceLinks] = useState<string[]>([]);
@@ -40,6 +42,7 @@ export default function EditTaskModal({ open, requestId }: { open: boolean; requ
       setDaysNeeded(req.daysNeeded);
       setAssigneeIds(req.assigneeIds);
       setReferenceLinks(req.referenceLinks || []);
+      setCategory(req.category || '');
       setLinkInput('');
     }
   }, [open, requestId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -69,6 +72,7 @@ export default function EditTaskModal({ open, requestId }: { open: boolean; requ
       daysNeeded,
       assigneeIds,
       referenceLinks,
+      category: pipeline === 'Organic' ? (category || null) : null,
     });
     closeModal();
   };
@@ -153,7 +157,7 @@ export default function EditTaskModal({ open, requestId }: { open: boolean; requ
             {PIPELINES.map(p => (
               <button
                 key={p.value}
-                onClick={() => setPipeline(p.value)}
+                onClick={() => { setPipeline(p.value); if (p.value !== 'Organic') setCategory(''); }}
                 className={`flex items-start gap-3 p-3 rounded-xl border-2 text-left transition-all ${
                   pipeline === p.value
                     ? 'border-[#a9674d] bg-[#f5ece7]'
@@ -169,6 +173,21 @@ export default function EditTaskModal({ open, requestId }: { open: boolean; requ
             ))}
           </div>
         </div>
+
+        {/* Category — Organic only */}
+        {pipeline === 'Organic' && (
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+              Category
+              <span className="ml-1.5 text-gray-400 font-normal">— optional</span>
+            </label>
+            <CategoryPicker
+              value={category}
+              onChange={setCategory}
+              isManager={currentUser.role === 'manager' || currentUser.role === 'founder'}
+            />
+          </div>
+        )}
 
         {/* Dates */}
         <div className="grid grid-cols-2 gap-4">

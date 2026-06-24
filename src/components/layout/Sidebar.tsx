@@ -1,39 +1,19 @@
 import { motion } from 'framer-motion';
 import {
-  LayoutDashboard, LayoutGrid, Calendar, GanttChartSquare,
+  LayoutDashboard,
   AlertTriangle, CheckSquare, Inbox, DatabaseBackup, LogOut,
-  ChevronDown,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useRedAlert } from '../../hooks/useRedAlert';
 import { useAuth } from '../../context/AuthContext';
-import type { View } from '../../types';
 
-const DASHBOARD_VIEWS: { id: View; label: string; icon: React.ElementType }[] = [
-  { id: 'kanban',    label: 'Kanban View',   icon: LayoutGrid },
-  { id: 'calendar', label: 'Calendar View', icon: Calendar },
-  { id: 'gantt',    label: 'Gantt View',    icon: GanttChartSquare },
-];
-
-const PIPELINE_COLORS: Record<string, string> = {
-  'PM':                   '#344161',
-  'Organic':              '#6f8e7c',
-  'Internal requirement': '#a9674d',
-  'Events':               '#c99d5d',
-};
 
 export default function Sidebar() {
-  const { activeView, setActiveView, openModal, requests, currentUser, activePipelines, togglePipeline } = useApp();
+  const { activeView, setActiveView, openModal, requests, currentUser } = useApp();
   const { redAlertCount } = useRedAlert();
   const { signOut } = useAuth();
 
   const isDashboard = ['kanban', 'calendar', 'gantt'].includes(activeView);
-
-  const pipelineCounts = Object.entries(PIPELINE_COLORS).map(([name, color]) => ({
-    name,
-    color,
-    count: requests.filter(r => r.pipeline === name && r.status !== 'Approved' && r.status !== 'Posted').length,
-  }));
 
   const myTasksCount = requests.filter(r =>
     (r.assigneeIds.includes(currentUser.id) || r.requesterId === currentUser.id) && r.status !== 'Approved' && r.status !== 'Posted'
@@ -116,56 +96,22 @@ export default function Sidebar() {
 
         <nav className="space-y-0.5">
 
-          {/* ── Dashboard group ── */}
-          <div>
-            {/* Dashboard parent row */}
-            <motion.button
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => { if (!isDashboard) setActiveView('kanban'); }}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left transition-colors ${
-                isDashboard ? 'text-white' : 'text-[#a89e8e] hover:bg-white/5 hover:text-[#f5f2e9]'
-              }`}
-              style={isDashboard ? {
-                background: 'linear-gradient(135deg, #c47d61 0%, #8a4f39 100%)',
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18), 0 4px 12px rgba(169,103,77,0.4), 0 2px 4px rgba(0,0,0,0.25)',
-              } : {}}
-            >
-              <div className="flex items-center gap-2.5">
-                <LayoutDashboard size={15} />
-                <span className="text-[13px] font-medium">Dashboard</span>
-              </div>
-              <ChevronDown
-                size={13}
-                className={`transition-transform duration-200 ${isDashboard ? 'rotate-180' : ''}`}
-              />
-            </motion.button>
-
-            {/* Sub-items — always visible when dashboard is active */}
-            {isDashboard && (
-              <div className="mt-0.5 ml-3 pl-3 border-l border-white/10 space-y-0.5">
-                {DASHBOARD_VIEWS.map(view => {
-                  const active = activeView === view.id;
-                  const Icon = view.icon;
-                  return (
-                    <motion.button
-                      key={view.id}
-                      whileTap={{ scale: 0.97 }}
-                      onClick={() => setActiveView(view.id)}
-                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left transition-colors ${
-                        active
-                          ? 'bg-white/15 text-white'
-                          : 'text-[#a89e8e] hover:bg-white/5 hover:text-[#f5f2e9]'
-                      }`}
-                    >
-                      <Icon size={13} />
-                      <span className="text-[12px] font-medium">{view.label}</span>
-                    </motion.button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          {/* ── Dashboard ── */}
+          <motion.button
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => { if (!isDashboard) setActiveView('kanban'); }}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-colors ${
+              isDashboard ? 'text-white' : 'text-[#a89e8e] hover:bg-white/5 hover:text-[#f5f2e9]'
+            }`}
+            style={isDashboard ? {
+              background: 'linear-gradient(135deg, #c47d61 0%, #8a4f39 100%)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18), 0 4px 12px rgba(169,103,77,0.4), 0 2px 4px rgba(0,0,0,0.25)',
+            } : {}}
+          >
+            <LayoutDashboard size={15} />
+            <span className="text-[13px] font-medium">Dashboard</span>
+          </motion.button>
 
           {/* ── Alert (Red Alert) ── */}
           <motion.button
@@ -219,46 +165,6 @@ export default function Sidebar() {
 
         </nav>
 
-        {/* Product Pipeline filter */}
-        <p className="px-2 mt-6 mb-2 text-[10px] font-semibold text-[#a89e8e] uppercase tracking-widest">Product Pipeline</p>
-        <div className="space-y-0.5">
-          {pipelineCounts.map(p => {
-            const isActive = activePipelines.includes(p.name as never);
-            return (
-              <motion.button
-                key={p.name}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => togglePipeline(p.name as never)}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl transition-colors text-left ${
-                  isActive ? 'bg-white/10' : 'hover:bg-white/5'
-                }`}
-                style={isActive ? { boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 1px 3px rgba(0,0,0,0.2)' } : {}}
-                title={`Filter by ${p.name}`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <span
-                    style={{
-                      width: 10, height: 10, borderRadius: '50%', flexShrink: 0, display: 'inline-block',
-                      background: `radial-gradient(circle at 36% 33%, rgba(255,255,255,0.9) 0%, ${p.color} 44%)`,
-                      boxShadow: isActive
-                        ? `0 0 10px ${p.color}90, 0 1px 3px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.5)`
-                        : `0 1px 3px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.4)`,
-                    }}
-                  />
-                  <span className={`text-[13px] font-medium transition-colors ${isActive ? 'text-white' : 'text-[#c4b9a8]'}`}>
-                    {p.name}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className={`text-[11px] font-medium transition-colors ${isActive ? 'text-white' : 'text-[#a89e8e]'}`}>
-                    {p.count}
-                  </span>
-                  {isActive && <span className="w-1.5 h-1.5 rounded-full bg-white/60" />}
-                </div>
-              </motion.button>
-            );
-          })}
-        </div>
       </div>
 
       {/* Log out */}

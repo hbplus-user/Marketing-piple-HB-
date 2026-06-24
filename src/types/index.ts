@@ -86,6 +86,7 @@ export interface ContentRequest {
   submissionNote: string;
   priority?: Priority;
   initiatedAt?: Date | null;
+  category?: string | null;
 }
 
 export type View = 'kanban' | 'calendar' | 'gantt' | 'redalert' | 'mytasks';

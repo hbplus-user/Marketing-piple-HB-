@@ -60,6 +60,7 @@ function migrateRequest(r: ContentRequest): ContentRequest {
     submissionLinks:     r.submissionLinks     ?? [],
     submissionNote:      r.submissionNote      ?? '',
     initiatedAt:         r.initiatedAt         ?? null,
+    category:            r.category            ?? null,
   };
 }
 
@@ -86,7 +87,7 @@ interface AppState {
   closeModal: () => void;
   updateRequest: (id: string, updates: Partial<ContentRequest>) => void;
   addRequest: (req: ContentRequest) => void;
-  approveRequest: (id: string) => void;
+  approveRequest: (id: string, requireFounderReview?: boolean) => void;
   markAsPosted: (id: string) => void;
   initiateDesign: (id: string) => void;
   submitForReview: (id: string, links: string[], note: string) => void;
@@ -105,6 +106,7 @@ interface AppState {
   togglePipeline: (p: Pipeline) => void;
   setDateRange: (range: DateRange) => void;
   toggleDateFilterType: (type: 'due' | 'post') => void;
+  setDateFilterTypes: (types: ('due' | 'post')[]) => void;
   clearFilters: () => void;
 }
 
@@ -262,6 +264,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const setDateFilterTypes = useCallback((types: ('due' | 'post')[]) => {
+    setDateFilterTypesState(types);
+  }, []);
+
   const clearFilters = useCallback(() => {
     setActivePipelines([]);
     setDateRangeState({ start: null, end: null });
@@ -336,19 +342,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     note,
   }), [currentUser.id]);
 
-  const approveRequest = useCallback((id: string) => {
+  const approveRequest = useCallback((id: string, requireFounderReview = false) => {
     const now = new Date();
     setRequests(prev => {
       const target = prev.find(r => r.id === id);
       if (!target) return prev;
-      const newStatus: Status = 'Approved';
-      const newApprovedAt = now;
+
+      const isManager = currentUser.role === 'manager';
+      const isFounder = currentUser.role === 'founder';
+      let newStatus: Status = target.status;
+      let newApprovedAt = target.approvedAt;
+
+      if (target.status === 'Design Review') {
+        if (isManager && requireFounderReview) {
+          newStatus = 'Approved' as Status;
+        } else {
+          newStatus = ((isManager || isFounder) ? 'Done' : 'Approved') as Status;
+          newApprovedAt = (isManager || isFounder) ? now : null;
+        }
+      } else if (target.status === 'Approved') {
+        if (isManager || isFounder) { newStatus = 'Done' as Status; newApprovedAt = now; }
+      }
 
       const updatedRounds = target.rounds.map((round, i) =>
         i === target.currentRound ? { ...round, status: 'approved' as const } : round
       );
+      const isFinal = (newStatus as string) === 'Done';
       const logEntry = makeLogEntry(
-        'final_approval',
+        isFinal ? 'final_approval' : 'partial_approval',
         target.status, newStatus,
       );
       const updated: ContentRequest = {
@@ -366,7 +387,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [currentUser.id, makeLogEntry, authUser]);
+  }, [currentUser.id, currentUser.role, makeLogEntry, authUser]);
 
   const markAsPosted = useCallback((id: string) => {
     setRequests(prev => {
@@ -674,7 +695,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       initiateDesign, submitForReview, acceptTask, removeAssignee, requestChanges,
       editPostDate, removeCreatorFromApproval, addComment,
       createBackup, restoreAll, restoreByRole, restoreByUser, restoreOne, deleteBackup,
-      togglePipeline, setDateRange, toggleDateFilterType, clearFilters,
+      togglePipeline, setDateRange, toggleDateFilterType, setDateFilterTypes, clearFilters,
     }}>
       {children}
     </AppContext.Provider>

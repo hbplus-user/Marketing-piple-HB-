@@ -593,6 +593,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                         if (!req.managerApproved) {
                           if (directReqFounder && !isFounder) {
                             const founderIds = users.filter(u => u.role === 'founder').map(u => u.id);
+                            closeModal();
                             updateRequest(req.id, {
                               managerApproved: true,
                               founderApprovalRequired: true,
@@ -601,8 +602,8 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                               approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
                               activityLog: [...(req.activityLog ?? []), mkLog('Brief Approval')],
                             });
-                            closeModal();
                           } else {
+                            closeModal();
                             updateRequest(req.id, {
                               managerApproved: true,
                               founderApprovalRequired: false,
@@ -611,16 +612,15 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                               status: 'Design',
                               activityLog: [...(req.activityLog ?? []), mkLog('Design')],
                             });
-                            closeModal();
                           }
                         } else if (req.founderApprovalRequired && !req.founderApproved) {
+                          closeModal();
                           updateRequest(req.id, {
                             founderApproved: true,
                             approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
                             status: 'Design',
                             activityLog: [...(req.activityLog ?? []), mkLog('Design')],
                           });
-                          closeModal();
                         }
                       }}
                       className="px-3.5 py-1.5 rounded-lg bg-[#a9674d] hover:bg-[#8a4f39] text-white text-xs font-semibold shadow-sm transition-colors"
@@ -649,7 +649,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                   if (req.status === 'Design' && canSubmit) {
                     return (
                       <button
-                        onClick={() => { initiateDesign(req.id); closeModal(); }}
+                        onClick={() => { closeModal(); initiateDesign(req.id); }}
                         className="px-4 py-2 text-sm font-semibold bg-[#7c3aed] hover:bg-[#6d28d9] text-white rounded-lg transition-colors"
                       >
                         Initiate Design
@@ -725,9 +725,11 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                           </button>
                           <button
                             onClick={() => {
-                              submitForReview(req.id, reviewLinks, reviewNote);
+                              const rid = req.id;
+                              closeModal();
+                              submitForReview(rid, reviewLinks, reviewNote);
                               setReviewFormOpen(false); setReviewLinks([]); setReviewLinkInput(''); setReviewNote('');
-                              closeModal(); openModal({ type: 'review-feedback', requestId: req.id });
+                              openModal({ type: 'review-feedback', requestId: rid });
                             }}
                             className="px-3.5 py-1.5 text-xs font-semibold bg-[#a9674d] hover:bg-[#8a4f39] text-white rounded-lg transition-colors flex items-center gap-1.5"
                           >

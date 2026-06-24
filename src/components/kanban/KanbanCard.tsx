@@ -7,7 +7,6 @@ import { pipelineConfig } from '../shared/Badge';
 import Badge from '../shared/Badge';
 import StatusChip from '../shared/StatusChip';
 import RedAlertChip from '../shared/RedAlertChip';
-import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 
@@ -80,7 +79,6 @@ export default function KanbanCard({ req }: { req: ContentRequest }) {
         <div className="flex items-center justify-between gap-2 pt-1">
           <div className="flex items-center gap-1.5 flex-wrap">
             {!alert && <StatusChip status={req.status} />}
-            <RoundBadge round={req.currentRound} />
             {req.attachments.length > 0 && (
               <span className="flex items-center gap-0.5 text-[11px] text-gray-400">
                 <Paperclip size={10} />

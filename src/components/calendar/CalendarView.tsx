@@ -7,7 +7,6 @@ import {
 import { ChevronLeft, ChevronRight, Clock, CalendarCheck } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { pipelineConfig } from '../shared/Badge';
-import { isRedAlert } from '../../utils/deadlineUtils';
 import { canViewAllRequests } from '../../utils/permissions';
 
 export default function CalendarView() {
@@ -188,41 +187,33 @@ export default function CalendarView() {
               </div>
 
               <div className="space-y-0.5">
-                {/* Deadline chips — amber */}
-                {deadlineReqs.slice(0, MAX_VISIBLE).map(req => {
-                  const alert = isRedAlert(req);
-                  return (
-                    <button
-                      key={`dl-${req.id}`}
-                      onClick={() => openModal({ type: 'designer-task', requestId: req.id })}
-                      className={`w-full text-left px-1.5 py-0.5 rounded text-[10px] font-medium truncate transition-opacity hover:opacity-80 flex items-center gap-0.5 ${
-                        alert ? 'ring-1 ring-red-400' : ''
-                      }`}
-                      style={{ backgroundColor: '#fef3c7', color: '#92400e' }}
-                      title={`Due: ${req.title}`}
-                    >
-                      <Clock size={8} className="flex-shrink-0 text-amber-600" />
-                      <span className="truncate">{req.title}</span>
-                    </button>
-                  );
-                })}
+                {/* Deadline chips — dark amber */}
+                {deadlineReqs.slice(0, MAX_VISIBLE).map(req => (
+                  <button
+                    key={`dl-${req.id}`}
+                    onClick={() => openModal({ type: 'designer-task', requestId: req.id })}
+                    className="w-full text-left px-1.5 py-0.5 rounded text-[10px] font-medium truncate transition-opacity hover:opacity-80 flex items-center gap-0.5"
+                    style={{ backgroundColor: '#fbbf24', color: '#451a03' }}
+                    title={`Due: ${req.title}`}
+                  >
+                    <Clock size={8} className="flex-shrink-0" style={{ color: '#78350f' }} />
+                    <span className="truncate">{req.title}</span>
+                  </button>
+                ))}
 
-                {/* Post date chips — pipeline color */}
+                {/* Post date chips — light pipeline color */}
                 {postOnly.slice(0, Math.max(0, MAX_VISIBLE - deadlineReqs.length)).map(req => {
-                  const color = pipelineConfig[req.pipeline]?.dot ?? '#6B7280';
-                  const bg    = pipelineConfig[req.pipeline]?.bg  ?? '#F3F4F6';
-                  const alert = isRedAlert(req);
+                  const bg  = pipelineConfig[req.pipeline]?.bg  ?? '#F3F4F6';
+                  const dot = pipelineConfig[req.pipeline]?.dot ?? '#6B7280';
                   return (
                     <button
                       key={`post-${req.id}`}
                       onClick={() => openModal({ type: 'designer-task', requestId: req.id })}
-                      className={`w-full text-left px-1.5 py-0.5 rounded text-[10px] font-medium truncate transition-opacity hover:opacity-80 flex items-center gap-0.5 ${
-                        alert ? 'ring-1 ring-red-400' : ''
-                      }`}
-                      style={{ backgroundColor: bg, color }}
+                      className="w-full text-left px-1.5 py-0.5 rounded text-[10px] font-medium truncate transition-opacity hover:opacity-80 flex items-center gap-0.5"
+                      style={{ backgroundColor: bg, color: dot }}
                       title={`Live: ${req.title}`}
                     >
-                      <CalendarCheck size={8} className="flex-shrink-0" style={{ color }} />
+                      <CalendarCheck size={8} className="flex-shrink-0" style={{ color: dot }} />
                       <span className="truncate">{req.title}</span>
                     </button>
                   );
