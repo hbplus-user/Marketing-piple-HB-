@@ -24,9 +24,7 @@ export default function Sidebar() {
       const pManager    = requests.filter(r => r.status === 'Brief Approval' && !r.managerApproved).length;
       const pFounder    = requests.filter(r => r.status === 'Brief Approval' && r.managerApproved && r.founderApprovalRequired && !r.founderApproved).length;
       const pCoApproval = requests.filter(r =>
-        r.status === 'Design Review' &&
-        (r.reviewerIds ?? []).includes(currentUser.id) &&
-        !(r.approvedBy ?? []).includes(currentUser.id)
+        r.status === 'Design Review'
       ).length;
       return pManager + pFounder + pCoApproval;
     }

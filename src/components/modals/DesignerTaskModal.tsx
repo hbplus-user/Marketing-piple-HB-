@@ -608,7 +608,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                               managerApproved: true,
                               founderApprovalRequired: false,
                               founderApproved: true,
-                              approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
+                              approvedBy: [],
                               status: 'Design',
                               activityLog: [...(req.activityLog ?? []), mkLog('Design')],
                             });
@@ -617,7 +617,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                           closeModal();
                           updateRequest(req.id, {
                             founderApproved: true,
-                            approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
+                            approvedBy: [],
                             status: 'Design',
                             activityLog: [...(req.activityLog ?? []), mkLog('Design')],
                           });

@@ -309,7 +309,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setRequests(prev => {
       const target = prev.find(r => r.id === id);
       if (!target) return prev;
-      const updated = { ...target, ...updates };
+      
+      let finalUpdates = { ...updates };
+      // Reset approvedBy to empty array if status changes to design/review and not explicitly overridden
+      if (updates.status && (updates.status === 'Design' || updates.status === 'Design Progress' || updates.status === 'Design Review')) {
+        if (finalUpdates.approvedBy === undefined) {
+          finalUpdates.approvedBy = [];
+        }
+      }
+      
+      const updated = { ...target, ...finalUpdates };
       if (authUser) {
         supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
           if (error) console.error('[Pipeline] Sync failed:', error.message);
@@ -424,6 +433,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...target,
         status: 'Design Progress' as const,
         initiatedAt: now,
+        approvedBy: [],
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
       if (authUser) {
@@ -445,6 +455,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         status: 'Design Review' as const,
         submissionLinks: links,
         submissionNote: note,
+        approvedBy: [],
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
       if (authUser) {
@@ -524,6 +535,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         currentRound: target.currentRound + 1,
         rounds: [...updatedRounds, newRound],
         status: 'Design Progress' as const,
+        approvedBy: [],
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
       if (authUser) {

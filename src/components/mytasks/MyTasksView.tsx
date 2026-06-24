@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { format, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
-import { ChevronDown, Flag, X, CalendarDays, Clock } from 'lucide-react';
+import { ChevronDown, Flag, X, CalendarDays, Clock, Users, User } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import Badge from '../shared/Badge';
 import StatusChip from '../shared/StatusChip';
+import Avatar from '../shared/Avatar';
 import DateRangePicker from '../shared/DateRangePicker';
 import type { DateRange } from '../../context/AppContext';
 import type { ContentRequest, Priority } from '../../types';
@@ -73,9 +74,13 @@ function PriorityPicker({ priority, onChange }: { priority?: Priority; onChange:
   );
 }
 
-function TaskRow({ req, isLast }: { req: ContentRequest; isLast: boolean }) {
-  const { openModal, updateRequest } = useApp();
+function TaskRow({ req, isLast, showAssignees }: { req: ContentRequest; isLast: boolean; showAssignees?: boolean }) {
+  const { openModal, updateRequest, users } = useApp();
   const cfg = req.priority ? PRIORITY_CONFIG[req.priority] : null;
+
+  const assignees = showAssignees
+    ? req.assigneeIds.map(id => users.find(u => u.id === id)).filter(Boolean) as typeof users
+    : [];
 
   return (
     <div
@@ -91,6 +96,26 @@ function TaskRow({ req, isLast }: { req: ContentRequest; isLast: boolean }) {
         <p className="text-[13px] font-semibold text-gray-800 truncate leading-snug">{req.title}</p>
         <span className="text-[10px] font-mono text-gray-400">{req.id}</span>
       </div>
+
+      {showAssignees && (
+        <div className="flex items-center gap-1 w-24 flex-shrink-0">
+          {assignees.length === 0 ? (
+            <span className="text-[10px] text-gray-300 italic">Unassigned</span>
+          ) : (
+            <div className="flex items-center -space-x-1">
+              {assignees.slice(0, 3).map(u => (
+                <div key={u.id} className="ring-2 ring-white rounded-full" title={u.name}>
+                  <Avatar initials={u.initials} color={u.avatarColor} size="sm" />
+                </div>
+              ))}
+              {assignees.length > 3 && (
+                <span className="text-[10px] text-gray-400 pl-2">+{assignees.length - 3}</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <Badge pipeline={req.pipeline} />
       <StatusChip status={req.status} />
       <div className="flex flex-col items-end gap-0.5 flex-shrink-0 w-20">
@@ -114,53 +139,113 @@ function TaskRow({ req, isLast }: { req: ContentRequest; isLast: boolean }) {
 const EMPTY_RANGE: DateRange = { start: null, end: null };
 
 export default function MyTasksView() {
-  const { filteredRequests: requests, currentUser } = useApp();
+  const { filteredRequests, requests: allRequests, currentUser } = useApp();
 
-  const [dueDateRange,  setDueDateRange]  = useState<DateRange>(EMPTY_RANGE);
+  const [tab, setTab]               = useState<'me' | 'team'>('me');
+  const [dueDateRange, setDueDateRange]   = useState<DateRange>(EMPTY_RANGE);
   const [postDateRange, setPostDateRange] = useState<DateRange>(EMPTY_RANGE);
 
   const hasFilters = dueDateRange.start !== null || postDateRange.start !== null;
+  const clearFilters = () => { setDueDateRange(EMPTY_RANGE); setPostDateRange(EMPTY_RANGE); };
 
-  const clearFilters = () => {
-    setDueDateRange(EMPTY_RANGE);
-    setPostDateRange(EMPTY_RANGE);
-  };
-
+  // ── Me tab ────────────────────────────────────────────────────────────────
   const myTasks = sortByPriority(
-    requests.filter(r =>
+    filteredRequests.filter(r =>
       r.assigneeIds.includes(currentUser.id) &&
       inRange(r.internalDeadline, dueDateRange) &&
       inRange(r.postDate, postDateRange)
     )
   );
-
-  const totalAssigned = requests.filter(r => r.assigneeIds.includes(currentUser.id)).length;
+  const totalAssigned = filteredRequests.filter(r => r.assigneeIds.includes(currentUser.id)).length;
   const activeCount   = myTasks.filter(r => r.status !== 'Approved' && r.status !== 'Posted').length;
   const highCount     = myTasks.filter(r => r.priority === 'high').length;
+
+  // ── Team tab ──────────────────────────────────────────────────────────────
+  const teamTasks = sortByPriority(
+    allRequests.filter(r =>
+      inRange(r.internalDeadline, dueDateRange) &&
+      inRange(r.postDate, postDateRange)
+    )
+  );
+  const teamActive = teamTasks.filter(r => r.status !== 'Approved' && r.status !== 'Posted').length;
+  const teamHigh   = teamTasks.filter(r => r.priority === 'high').length;
+
+  const tasks       = tab === 'me' ? myTasks : teamTasks;
+  const isEmpty     = tasks.length === 0;
 
   return (
     <div className="flex flex-col h-full px-6 py-5" style={{ background: '#f5f2e9' }}>
 
       {/* Header */}
       <div className="flex items-start justify-between mb-5 gap-4 flex-wrap">
-        <div>
-          <h2 className="text-lg font-bold text-gray-900">My Tasks</h2>
-          <div className="flex items-center gap-3 mt-1 flex-wrap">
-            <span className="text-sm text-gray-500">
-              {totalAssigned} assigned · {activeCount} active
-              {hasFilters && myTasks.length !== totalAssigned && ` · ${myTasks.length} shown`}
-            </span>
-            {highCount > 0 && (
-              <span className="flex items-center gap-1 text-[11px] font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full border border-red-100">
-                <Flag size={9} /> {highCount} high priority
-              </span>
+        <div className="flex flex-col gap-2">
+
+          {/* Title + toggle */}
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-bold text-gray-900">Tasks</h2>
+
+            {/* Me / Team pill toggle */}
+            <div
+              className="flex items-center rounded-xl border border-gray-200 bg-white p-0.5 gap-0.5"
+              style={{ boxShadow: '0 1px 3px rgba(15,23,42,0.06)' }}
+            >
+              <button
+                onClick={() => setTab('me')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all ${
+                  tab === 'me'
+                    ? 'bg-[#a9674d] text-white shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <User size={12} />
+                Me
+              </button>
+              <button
+                onClick={() => setTab('team')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all ${
+                  tab === 'team'
+                    ? 'bg-[#a9674d] text-white shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Users size={12} />
+                Team
+              </button>
+            </div>
+          </div>
+
+          {/* Stats subtitle */}
+          <div className="flex items-center gap-3 flex-wrap">
+            {tab === 'me' ? (
+              <>
+                <span className="text-sm text-gray-500">
+                  {totalAssigned} assigned · {activeCount} active
+                  {hasFilters && myTasks.length !== totalAssigned && ` · ${myTasks.length} shown`}
+                </span>
+                {highCount > 0 && (
+                  <span className="flex items-center gap-1 text-[11px] font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full border border-red-100">
+                    <Flag size={9} /> {highCount} high priority
+                  </span>
+                )}
+              </>
+            ) : (
+              <>
+                <span className="text-sm text-gray-500">
+                  {allRequests.length} total · {teamActive} active
+                  {hasFilters && teamTasks.length !== allRequests.length && ` · ${teamTasks.length} shown`}
+                </span>
+                {teamHigh > 0 && (
+                  <span className="flex items-center gap-1 text-[11px] font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full border border-red-100">
+                    <Flag size={9} /> {teamHigh} high priority
+                  </span>
+                )}
+              </>
             )}
           </div>
         </div>
 
         {/* Date filters */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Due date filter */}
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] font-semibold text-gray-500 flex items-center gap-1">
               <Clock size={11} className="text-amber-500" /> Due date
@@ -170,7 +255,6 @@ export default function MyTasksView() {
 
           <span className="w-px h-5 bg-gray-200 flex-shrink-0" />
 
-          {/* Post date filter */}
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] font-semibold text-gray-500 flex items-center gap-1">
               <CalendarDays size={11} className="text-blue-400" /> Post date
@@ -178,7 +262,6 @@ export default function MyTasksView() {
             <DateRangePicker value={postDateRange} onChange={setPostDateRange} />
           </div>
 
-          {/* Clear filters */}
           {hasFilters && (
             <button
               onClick={clearFilters}
@@ -190,11 +273,16 @@ export default function MyTasksView() {
         </div>
       </div>
 
-      {myTasks.length === 0 ? (
+      {/* Content */}
+      {isEmpty ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2">
-          <span className="text-4xl">{hasFilters ? '🔍' : '✅'}</span>
+          <span className="text-4xl">{hasFilters ? '🔍' : tab === 'me' ? '✅' : '📋'}</span>
           <p className="text-sm text-gray-500 font-medium">
-            {hasFilters ? 'No tasks match the selected dates.' : 'No tasks assigned to you.'}
+            {hasFilters
+              ? 'No tasks match the selected dates.'
+              : tab === 'me'
+                ? 'No tasks assigned to you.'
+                : 'No tasks in the organisation yet.'}
           </p>
           {hasFilters && (
             <button onClick={clearFilters} className="text-xs text-[#a9674d] hover:underline">
@@ -211,6 +299,9 @@ export default function MyTasksView() {
           <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-100 bg-gray-50/60">
             <span className="w-2 flex-shrink-0" />
             <span className="flex-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Task</span>
+            {tab === 'team' && (
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-24">Assigned to</span>
+            )}
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-20">Pipeline</span>
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-24">Status</span>
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-20 text-right">
@@ -219,8 +310,13 @@ export default function MyTasksView() {
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-24 text-right">Priority</span>
           </div>
 
-          {myTasks.map((req, i) => (
-            <TaskRow key={req.id} req={req} isLast={i === myTasks.length - 1} />
+          {tasks.map((req, i) => (
+            <TaskRow
+              key={req.id}
+              req={req}
+              isLast={i === tasks.length - 1}
+              showAssignees={tab === 'team'}
+            />
           ))}
         </div>
       )}

@@ -41,11 +41,10 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
     r.founderApproved === false
   );
 
-  // 3. Awaiting Co-Approval
+  // 3. Design Review — visible to all managers and founders
   const pendingCoApproval = requests.filter(r =>
     r.status === 'Design Review' &&
-    (r.reviewerIds ?? []).includes(currentUser.id) &&
-    !(r.approvedBy ?? []).includes(currentUser.id)
+    (currentUser.role === 'manager' || currentUser.role === 'founder')
   );
 
   const totalPending = pendingManagerApproval.length + pendingFounderApproval.length + pendingCoApproval.length;
@@ -88,7 +87,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
             managerApproved: true,
             founderApprovalRequired: false,
             founderApproved: true,
-            approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
+            approvedBy: [],
             status: 'Design',
             activityLog: [...(req.activityLog ?? []), logDesign],
           });
@@ -98,34 +97,20 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
         const log = makeLog('brief_approved', 'Brief Approval', 'Design');
         updateRequest(id, {
           founderApproved: true,
-          approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
+          approvedBy: [],
           status: 'Design',
           activityLog: [...(req.activityLog ?? []), log],
         });
       }
     } else {
-      // Co-approval workflow for Design Review stage
+      // Design Review approval — any manager/founder approval advances to Approved
       const newApprovedBy = Array.from(new Set([...(req.approvedBy ?? []), currentUser.id]));
-      const reviewerIds = req.reviewerIds ?? [];
-      const allApproved = reviewerIds.length === 0 || reviewerIds.every(rid => newApprovedBy.includes(rid));
-
-      if (allApproved) {
-        const employee = users.find(u => u.role === 'employee');
-        const log = makeLog('brief_approved', req.status, 'Design');
-        updateRequest(id, {
-          approvedBy: newApprovedBy,
-          assigneeIds: req.assigneeIds.length > 0 ? req.assigneeIds : (employee ? [employee.id] : []),
-          status: 'Design',
-          activityLog: [...(req.activityLog ?? []), log],
-        });
-      } else {
-        const log = makeLog('brief_approved', req.status, 'Design Review');
-        updateRequest(id, {
-          approvedBy: newApprovedBy,
-          status: 'Design Review',
-          activityLog: [...(req.activityLog ?? []), log],
-        });
-      }
+      const log = makeLog('brief_approved', req.status, 'Approved');
+      updateRequest(id, {
+        approvedBy: newApprovedBy,
+        status: 'Approved',
+        activityLog: [...(req.activityLog ?? []), log],
+      });
     }
     closeModal();
   };
@@ -186,7 +171,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
     setForms(prev => { const next = { ...prev }; delete next[id]; return next; });
   };
 
-  const renderCard = (req: ContentRequest, showCoApprover: boolean) => {
+  const renderCard = (req: ContentRequest, showCoApprover: boolean, source: 'brief' | 'review') => {
     const requester = users.find(u => u.id === req.requesterId);
     const alert = isRedAlert(req);
     const isExpanded = expandedId === req.id;
@@ -221,6 +206,14 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
         <div className="p-4">
           <div className="flex items-start gap-3 mb-2 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
+              {/* Source stage tag */}
+              <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${
+                source === 'brief'
+                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                  : 'bg-violet-50 text-violet-700 border-violet-200'
+              }`}>
+                {source === 'brief' ? '📋 Brief Approval' : '🎨 Design Review'}
+              </span>
               <Badge pipeline={req.pipeline} />
               {alert && (
                 <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-600">
@@ -455,38 +448,67 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
             <p className="text-sm text-gray-500">Queue is clear — all requests reviewed.</p>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-7">
 
-            {/* Section 1: Pending Manager Approval */}
-            {pendingManagerApproval.length > 0 && (
-              <div className="space-y-3">
-                <p className="text-[10px] font-bold text-[#a9674d] uppercase tracking-widest flex items-center gap-1.5">
-                  <span>📋</span>
-                  Pending Manager Approval · {pendingManagerApproval.length}
-                </p>
-                {pendingManagerApproval.map(req => renderCard(req, true))}
+            {/* ── Group A: From Brief Approval ─────────────────────────── */}
+            {(pendingManagerApproval.length > 0 || pendingFounderApproval.length > 0) && (
+              <div>
+                {/* Group header */}
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                    📋 From Brief Approval
+                  </span>
+                  <span className="text-[11px] text-gray-400 font-medium">
+                    {pendingManagerApproval.length + pendingFounderApproval.length} pending
+                  </span>
+                  <div className="flex-1 h-px bg-amber-100" />
+                </div>
+
+                <div className="space-y-5">
+                  {/* Sub: Pending Manager */}
+                  {pendingManagerApproval.length > 0 && (
+                    <div className="space-y-3">
+                      <p className="text-[10px] font-bold text-[#a9674d] uppercase tracking-widest flex items-center gap-1.5">
+                        <span>·</span> Needs manager approval · {pendingManagerApproval.length}
+                      </p>
+                      {pendingManagerApproval.map(req => renderCard(req, true, 'brief'))}
+                    </div>
+                  )}
+
+                  {/* Sub: Pending Founder */}
+                  {pendingFounderApproval.length > 0 && (
+                    <div className="space-y-3">
+                      <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest flex items-center gap-1.5">
+                        <span>·</span> Needs founder approval · {pendingFounderApproval.length}
+                      </p>
+                      {pendingFounderApproval.map(req => renderCard(req, false, 'brief'))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
-            {/* Section 2: Pending Founder Approval */}
-            {pendingFounderApproval.length > 0 && (
-              <div className="space-y-3">
-                <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest flex items-center gap-1.5">
-                  <span>👑</span>
-                  Pending Founder Approval · {pendingFounderApproval.length}
-                </p>
-                {pendingFounderApproval.map(req => renderCard(req, false))}
-              </div>
-            )}
-
-            {/* Section 3: Co-approval waiting on current user */}
+            {/* ── Group B: From Design Review ──────────────────────────── */}
             {pendingCoApproval.length > 0 && (
-              <div className="space-y-3">
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
-                  <Clock size={10} />
-                  Awaiting your co-approval · {pendingCoApproval.length}
-                </p>
-                {pendingCoApproval.map(req => renderCard(req, false))}
+              <div>
+                {/* Group header */}
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-violet-100 text-violet-800 border border-violet-200">
+                    🎨 From Design Review
+                  </span>
+                  <span className="text-[11px] text-gray-400 font-medium">
+                    {pendingCoApproval.length} pending
+                  </span>
+                  <div className="flex-1 h-px bg-violet-100" />
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-[10px] font-bold text-violet-600 uppercase tracking-widest flex items-center gap-1.5">
+                    <Clock size={10} />
+                    Awaiting approval · {pendingCoApproval.length}
+                  </p>
+                  {pendingCoApproval.map(req => renderCard(req, false, 'review'))}
+                </div>
               </div>
             )}
 
