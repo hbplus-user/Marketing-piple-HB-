@@ -43,9 +43,14 @@ export function canRemoveCreator(role: Role, req: ContentRequest, userId: string
   return role === 'manager' || req.ownerId === userId;
 }
 
-/** Employees only see their own requests; manager/founder see all. */
-export function canViewAllRequests(role: Role): boolean {
-  return role === 'manager' || role === 'founder';
+/** All team members can see all tasks. */
+export function canViewAllRequests(_role: Role): boolean {
+  return true;
+}
+
+/** Only the task creator (requesterId) or a manager can edit a task. */
+export function canEdit(role: Role, req: ContentRequest, userId: string): boolean {
+  return role === 'manager' || req.requesterId === userId;
 }
 
 /** Returns true if the task is approved (or doesn't require further manager/founder approval). */

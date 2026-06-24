@@ -14,7 +14,7 @@ import { useAuth } from './AuthContext';
 const AUTO_INTERVAL = 6 * 60 * 60 * 1000;
 
 // Recursively revive ISO date strings in known date fields back to Date objects
-const DATE_FIELDS = new Set(['postDate', 'internalDeadline', 'approvedAt', 'createdAt', 'date', 'timestamp', 'acceptedAt', 'startDate']);
+const DATE_FIELDS = new Set(['postDate', 'internalDeadline', 'approvedAt', 'createdAt', 'date', 'timestamp', 'acceptedAt', 'startDate', 'initiatedAt']);
 function reviveObj(obj: unknown): unknown {
   if (obj === null || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) return obj.map(reviveObj);
@@ -36,6 +36,7 @@ const STATUS_MIGRATION: Record<string, Status> = {
   'In Progress':        'Design Progress',
   'In Review':          'Design Review',
   'Partially Approved': 'Approved',
+  'Done':               'Approved',
 };
 
 const PIPELINE_MIGRATION: Record<string, Pipeline> = {
@@ -58,6 +59,7 @@ function migrateRequest(r: ContentRequest): ContentRequest {
     assigneeAcceptance:  r.assigneeAcceptance  ?? [],
     submissionLinks:     r.submissionLinks     ?? [],
     submissionNote:      r.submissionNote      ?? '',
+    initiatedAt:         r.initiatedAt         ?? null,
   };
 }
 
@@ -86,6 +88,7 @@ interface AppState {
   addRequest: (req: ContentRequest) => void;
   approveRequest: (id: string) => void;
   markAsPosted: (id: string) => void;
+  initiateDesign: (id: string) => void;
   submitForReview: (id: string, links: string[], note: string) => void;
   acceptTask: (id: string, startDate?: Date) => void;
   removeAssignee: (id: string, userId: string) => void;
@@ -167,18 +170,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return () => { supabase.removeChannel(channel); };
   }, [authUser]);
 
-  // Debounced sync: push all requests to Supabase 1.5s after any change
-  // Guard prevents writing mock/empty data before the initial load completes
-  useEffect(() => {
-    if (!authUser || !supabaseReady.current) return;
-    const timer = setTimeout(() => {
-      const rows = requests.map(r => ({ id: r.id, data: r, updated_at: new Date().toISOString() }));
-      supabase.from('content_requests').upsert(rows).then(({ error }) => {
-        if (error) console.error('[Pipeline] Sync failed:', error.message);
-      });
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [requests, authUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync currentUser with active Supabase session
   useEffect(() => {
@@ -309,8 +300,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [requests, activePipelines, dateRange, dateFilterTypes, currentUser]);
 
   const updateRequest = useCallback((id: string, updates: Partial<ContentRequest>) => {
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, ...updates } : r));
-  }, []);
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target) return prev;
+      const updated = { ...target, ...updates };
+      if (authUser) {
+        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
+          if (error) console.error('[Pipeline] Sync failed:', error.message);
+        });
+      }
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [authUser]);
 
   const addRequest = useCallback((req: ContentRequest) => {
     setRequests(prev => [req, ...prev]);
@@ -337,158 +338,241 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const approveRequest = useCallback((id: string) => {
     const now = new Date();
-    setRequests(prev => prev.map(r => {
-      if (r.id !== id) return r;
-      const isManager = currentUser.role === 'manager';
-      let newStatus: Status = r.status;
-      let newApprovedAt = r.approvedAt;
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target) return prev;
+      const newStatus: Status = 'Approved';
+      const newApprovedAt = now;
 
-      if (r.status === 'Design Review') {
-        // Manager approval is always final; owner (non-manager) → partial
-        newStatus = isManager ? 'Done' : 'Approved';
-        newApprovedAt = isManager ? now : null;
-      } else if (r.status === 'Approved') {
-        // Only manager can give final sign-off here
-        if (isManager) { newStatus = 'Done'; newApprovedAt = now; }
-      }
-
-      const updatedRounds = r.rounds.map((round, i) =>
-        i === r.currentRound ? { ...round, status: 'approved' as const } : round
+      const updatedRounds = target.rounds.map((round, i) =>
+        i === target.currentRound ? { ...round, status: 'approved' as const } : round
       );
       const logEntry = makeLogEntry(
-        newStatus === 'Done' ? 'final_approval' : 'partial_approval',
-        r.status, newStatus,
+        'final_approval',
+        target.status, newStatus,
       );
-      return {
-        ...r,
+      const updated: ContentRequest = {
+        ...target,
         status: newStatus,
         approvedAt: newApprovedAt,
-        approvedBy: [...r.approvedBy, currentUser.id],
+        approvedBy: Array.from(new Set([...(target.approvedBy ?? []), currentUser.id])),
         rounds: updatedRounds,
-        activityLog: [...(r.activityLog ?? []), logEntry],
+        activityLog: [...(target.activityLog ?? []), logEntry],
       };
-    }));
-  }, [currentUser.id, currentUser.role, makeLogEntry]);
+      if (authUser) {
+        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
+          if (error) console.error('[Pipeline] Sync failed:', error.message);
+        });
+      }
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [currentUser.id, makeLogEntry, authUser]);
 
   const markAsPosted = useCallback((id: string) => {
-    setRequests(prev => prev.map(r => {
-      if (r.id !== id) return r;
-      const newPostedBy = Array.from(new Set([...(r.postedBy ?? []), currentUser.id]));
-      const ownerMarked = newPostedBy.includes(r.ownerId);
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target) return prev;
+      const newPostedBy = Array.from(new Set([...(target.postedBy ?? []), currentUser.id]));
+      const ownerMarked = newPostedBy.includes(target.ownerId);
       const managerMarked = users.some(u => u.role === 'manager' && newPostedBy.includes(u.id));
       const readyToPost = ownerMarked && managerMarked;
-      const newStatus: Status = readyToPost ? 'Posted' : r.status;
-      const logEntry = makeLogEntry('marked_posted', r.status, newStatus);
-      return {
-        ...r,
+      const newStatus: Status = readyToPost ? 'Posted' : target.status;
+      const logEntry = makeLogEntry('marked_posted', target.status, newStatus);
+      const updated: ContentRequest = {
+        ...target,
         postedBy: newPostedBy,
         status: newStatus,
-        activityLog: [...(r.activityLog ?? []), logEntry],
+        activityLog: [...(target.activityLog ?? []), logEntry],
       };
-    }));
-  }, [currentUser.id, makeLogEntry, users]);
+      if (authUser) {
+        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
+          if (error) console.error('[Pipeline] Sync failed:', error.message);
+        });
+      }
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [currentUser.id, makeLogEntry, users, authUser]);
+
+  const initiateDesign = useCallback((id: string) => {
+    const now = new Date();
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target) return prev;
+      const logEntry = makeLogEntry('status_change', target.status, 'Design Progress', 'initiated design work');
+      const updated: ContentRequest = {
+        ...target,
+        status: 'Design Progress' as const,
+        initiatedAt: now,
+        activityLog: [...(target.activityLog ?? []), logEntry],
+      };
+      if (authUser) {
+        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
+          if (error) console.error('[Pipeline] Sync failed:', error.message);
+        });
+      }
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [makeLogEntry, authUser]);
 
   const submitForReview = useCallback((id: string, links: string[], note: string) => {
-    setRequests(prev => prev.map(r => {
-      if (r.id !== id) return r;
-      const logEntry = makeLogEntry('submitted_for_review', r.status, 'Design Review', note || undefined);
-      return {
-        ...r,
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target) return prev;
+      const logEntry = makeLogEntry('submitted_for_review', target.status, 'Design Review', note || undefined);
+      const updated: ContentRequest = {
+        ...target,
         status: 'Design Review' as const,
         submissionLinks: links,
         submissionNote: note,
-        activityLog: [...(r.activityLog ?? []), logEntry],
+        activityLog: [...(target.activityLog ?? []), logEntry],
       };
-    }));
-  }, [makeLogEntry]);
+      if (authUser) {
+        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
+          if (error) console.error('[Pipeline] Sync failed:', error.message);
+        });
+      }
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [makeLogEntry, authUser]);
 
   const acceptTask = useCallback((id: string, startDate?: Date) => {
-    setRequests(prev => prev.map(r => {
-      if (r.id !== id) return r;
-      if ((r.assigneeAcceptance ?? []).some(a => a.userId === currentUser.id)) return r;
-      const sequence = (r.assigneeAcceptance ?? []).length + 1;
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target) return prev;
+      if ((target.assigneeAcceptance ?? []).some(a => a.userId === currentUser.id)) return prev;
+      const sequence = (target.assigneeAcceptance ?? []).length + 1;
       const entry: AssigneeAcceptance = {
         userId: currentUser.id,
         acceptedAt: new Date(),
         startDate,
         sequence,
       };
-      const logEntry = makeLogEntry('status_change', r.status, r.status, `accepted task (sequence #${sequence})`);
-      return {
-        ...r,
-        assigneeAcceptance: [...(r.assigneeAcceptance ?? []), entry],
-        activityLog: [...(r.activityLog ?? []), logEntry],
+      const logEntry = makeLogEntry('status_change', target.status, target.status, `accepted task (sequence #${sequence})`);
+      const updated: ContentRequest = {
+        ...target,
+        assigneeAcceptance: [...(target.assigneeAcceptance ?? []), entry],
+        activityLog: [...(target.activityLog ?? []), logEntry],
       };
-    }));
-  }, [currentUser.id, makeLogEntry]);
+      if (authUser) {
+        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
+          if (error) console.error('[Pipeline] Sync failed:', error.message);
+        });
+      }
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [currentUser.id, makeLogEntry, authUser]);
 
   const removeAssignee = useCallback((id: string, userId: string) => {
-    setRequests(prev => prev.map(r => {
-      if (r.id !== id) return r;
-      const filtered = (r.assigneeAcceptance ?? [])
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target) return prev;
+      const filtered = (target.assigneeAcceptance ?? [])
         .filter(a => a.userId !== userId)
         .map((a, i) => ({ ...a, sequence: i + 1 }));
-      const logEntry = makeLogEntry('status_change', r.status, r.status, `removed assignee`);
-      return {
-        ...r,
-        assigneeIds: r.assigneeIds.filter(aid => aid !== userId),
+      const logEntry = makeLogEntry('status_change', target.status, target.status, `removed assignee`);
+      const updated: ContentRequest = {
+        ...target,
+        assigneeIds: target.assigneeIds.filter(aid => aid !== userId),
         assigneeAcceptance: filtered,
-        activityLog: [...(r.activityLog ?? []), logEntry],
+        activityLog: [...(target.activityLog ?? []), logEntry],
       };
-    }));
-  }, [makeLogEntry]);
+      if (authUser) {
+        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
+          if (error) console.error('[Pipeline] Sync failed:', error.message);
+        });
+      }
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [makeLogEntry, authUser]);
 
   const requestChanges = useCallback((id: string, comment: string, referenceLink?: string) => {
-    setRequests(prev => prev.map(r => {
-      if (r.id !== id) return r;
-      const updatedRounds = r.rounds.map((round, i) =>
-        i === r.currentRound ? { ...round, status: 'changes-requested' as const } : round
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target) return prev;
+      const updatedRounds = target.rounds.map((round, i) =>
+        i === target.currentRound ? { ...round, status: 'changes-requested' as const } : round
       );
       const newRound = {
-        round: r.currentRound + 1,
+        round: target.currentRound + 1,
         comments: comment ? [{ userId: currentUser.id, text: comment, createdAt: new Date(), referenceLink }] : [],
         status: 'pending' as const,
       };
-      const logEntry = makeLogEntry('changes_requested', r.status, 'Design Progress', comment);
-      return {
-        ...r,
-        currentRound: r.currentRound + 1,
+      const logEntry = makeLogEntry('changes_requested', target.status, 'Design Progress', comment);
+      const updated: ContentRequest = {
+        ...target,
+        currentRound: target.currentRound + 1,
         rounds: [...updatedRounds, newRound],
         status: 'Design Progress' as const,
-        activityLog: [...(r.activityLog ?? []), logEntry],
+        activityLog: [...(target.activityLog ?? []), logEntry],
       };
-    }));
-  }, [currentUser.id, makeLogEntry]);
+      if (authUser) {
+        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
+          if (error) console.error('[Pipeline] Sync failed:', error.message);
+        });
+      }
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [currentUser.id, makeLogEntry, authUser]);
 
   const editPostDate = useCallback((id: string, newDate: Date, reason: string) => {
-    setRequests(prev => prev.map(r => {
-      if (r.id !== id) return r;
-      return {
-        ...r,
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target) return prev;
+      const updated: ContentRequest = {
+        ...target,
         postDate: newDate,
         internalDeadline: calcInternalDeadline(newDate),
-        postDateHistory: [...r.postDateHistory, { date: r.postDate, reason, changedBy: currentUser.id }],
+        postDateHistory: [...target.postDateHistory, { date: target.postDate, reason, changedBy: currentUser.id }],
       };
-    }));
-  }, [currentUser.id]);
+      if (authUser) {
+        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
+          if (error) console.error('[Pipeline] Sync failed:', error.message);
+        });
+      }
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [currentUser.id, authUser]);
 
   const removeCreatorFromApproval = useCallback((id: string) => {
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, creatorRemovedFromApproval: true } : r));
-  }, []);
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target) return prev;
+      const updated: ContentRequest = {
+        ...target,
+        creatorRemovedFromApproval: true,
+      };
+      if (authUser) {
+        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
+          if (error) console.error('[Pipeline] Sync failed:', error.message);
+        });
+      }
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [authUser]);
 
   const addComment = useCallback((id: string, text: string, referenceLink?: string) => {
     if (!text.trim()) return;
-    setRequests(prev => prev.map(r => {
-      if (r.id !== id) return r;
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target) return prev;
       const newComment = { userId: currentUser.id, text: text.trim(), createdAt: new Date(), referenceLink };
-      const updatedRounds = r.rounds.map((round, i) =>
-        i === r.currentRound
+      const updatedRounds = target.rounds.map((round, i) =>
+        i === target.currentRound
           ? { ...round, comments: [...round.comments, newComment] }
           : round
       );
-      return { ...r, rounds: updatedRounds };
-    }));
-  }, [currentUser.id]);
+      const updated: ContentRequest = {
+        ...target,
+        rounds: updatedRounds,
+      };
+      if (authUser) {
+        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
+          if (error) console.error('[Pipeline] Sync failed:', error.message);
+        });
+      }
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [currentUser.id, authUser]);
 
   // ── Backup helpers ────────────────────────────────────────────────────────
 
@@ -587,7 +671,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       activePipelines, dateRange, dateFilterTypes, backups, backupsLoading,
       setCurrentUser, setActiveView, openModal, closeModal,
       updateRequest, addRequest, approveRequest, markAsPosted,
-      submitForReview, acceptTask, removeAssignee, requestChanges,
+      initiateDesign, submitForReview, acceptTask, removeAssignee, requestChanges,
       editPostDate, removeCreatorFromApproval, addComment,
       createBackup, restoreAll, restoreByRole, restoreByUser, restoreOne, deleteBackup,
       togglePipeline, setDateRange, toggleDateFilterType, clearFilters,

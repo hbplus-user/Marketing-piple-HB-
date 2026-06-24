@@ -32,11 +32,11 @@ export default function Sidebar() {
   const pipelineCounts = Object.entries(PIPELINE_COLORS).map(([name, color]) => ({
     name,
     color,
-    count: requests.filter(r => r.pipeline === name && r.status !== 'Done').length,
+    count: requests.filter(r => r.pipeline === name && r.status !== 'Approved' && r.status !== 'Posted').length,
   }));
 
   const myTasksCount = requests.filter(r =>
-    (r.assigneeIds.includes(currentUser.id) || r.requesterId === currentUser.id) && r.status !== 'Done'
+    (r.assigneeIds.includes(currentUser.id) || r.requesterId === currentUser.id) && r.status !== 'Approved' && r.status !== 'Posted'
   ).length;
 
   const pendingApprovalCount = (() => {

@@ -76,25 +76,14 @@ export default function NewRequestModal({ open }: { open: boolean }) {
     }, 0);
     const id = `REQ-${String(maxNum + 1).padStart(3, '0')}`;
     const creatorIsManager = currentUser.role === 'manager';
-    const creatorIsFounder = currentUser.role === 'founder';
-    // If the creator is the manager/founder the brief is self-approved; start at Design Progress
-    const initialStatus = (creatorIsManager || creatorIsFounder) ? 'Design Progress' : 'Brief Approval';
     const now = new Date();
-    const initialLog = (creatorIsManager || creatorIsFounder) ? [{
-      id: `log-${now.getTime()}`,
-      type: 'brief_approved' as const,
-      userId: currentUser.id,
-      timestamp: now,
-      fromStatus: 'Brief Approval' as const,
-      toStatus: 'Design Progress' as const,
-    }] : [];
 
     addRequest({
       id,
       title,
       brief,
       pipeline,
-      status: initialStatus,
+      status: 'Brief Approval',
       requesterId: currentUser.id,
       ownerId: creatorIsManager ? currentUser.id : manager.id,
       assigneeIds,
@@ -107,14 +96,14 @@ export default function NewRequestModal({ open }: { open: boolean }) {
       attachments: [],
       referenceLinks,
       approvedAt: null,
-      approvedBy: creatorIsManager || creatorIsFounder ? [currentUser.id] : [],
+      approvedBy: [],
       createdAt: now,
       postDateHistory: [],
       creatorRemovedFromApproval: false,
-      managerApproved: creatorIsManager || creatorIsFounder,
+      managerApproved: false,
       founderApprovalRequired: false,
-      founderApproved: creatorIsFounder,
-      activityLog: initialLog,
+      founderApproved: false,
+      activityLog: [],
       postedBy: [],
       assigneeAcceptance: [],
       submissionLinks: [],

@@ -10,12 +10,12 @@ export function daysToDeadline(internalDeadline: Date): number {
 }
 
 export function isRedAlert(req: ContentRequest): boolean {
-  if (req.status === 'Done') return false;
+  if (req.status === 'Approved' || req.status === 'Posted') return false;
   return daysToDeadline(req.internalDeadline) < req.daysNeeded;
 }
 
 export function getUrgency(req: ContentRequest): UrgencyLevel {
-  if (req.status === 'Done') return 'on-track';
+  if (req.status === 'Approved' || req.status === 'Posted') return 'on-track';
   const days = daysToDeadline(req.internalDeadline);
   if (days < 0) return 'overdue';
   if (days < req.daysNeeded) return 'urgent';

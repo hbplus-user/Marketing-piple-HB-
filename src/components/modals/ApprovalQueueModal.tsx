@@ -72,34 +72,34 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
         if (needsFounder && !isFounder) {
           // Manager approved but still needs founder — stay in Brief Approval
           const founderIds = users.filter(u => u.role === 'founder').map(u => u.id);
-          const log = makeLog('brief_approved', 'Brief Approval', 'Brief Approval');
+          const logBrief = makeLog('brief_approved', 'Brief Approval', 'Brief Approval');
           updateRequest(id, {
             managerApproved: true,
             founderApprovalRequired: true,
             founderApproved: false,
             reviewerIds: Array.from(new Set([...(req.reviewerIds ?? []), ...founderIds])),
             approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
-            activityLog: [...(req.activityLog ?? []), log],
+            activityLog: [...(req.activityLog ?? []), logBrief],
           });
         } else {
-          // Manager approved, no founder needed → advance to Design Progress
-          const log = makeLog('brief_approved', 'Brief Approval', 'Design Progress');
+          // Manager approved, no founder needed → advance to Design
+          const logDesign = makeLog('brief_approved', 'Brief Approval', 'Design');
           updateRequest(id, {
             managerApproved: true,
             founderApprovalRequired: false,
             founderApproved: true,
             approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
-            status: 'Design Progress',
-            activityLog: [...(req.activityLog ?? []), log],
+            status: 'Design',
+            activityLog: [...(req.activityLog ?? []), logDesign],
           });
         }
       } else if (req.founderApprovalRequired && !req.founderApproved) {
-        // Founder gives final brief approval → advance to Design Progress
-        const log = makeLog('brief_approved', 'Brief Approval', 'Design Progress');
+        // Founder gives final brief approval → advance to Design
+        const log = makeLog('brief_approved', 'Brief Approval', 'Design');
         updateRequest(id, {
           founderApproved: true,
           approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
-          status: 'Design Progress',
+          status: 'Design',
           activityLog: [...(req.activityLog ?? []), log],
         });
       }
@@ -111,11 +111,11 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
 
       if (allApproved) {
         const employee = users.find(u => u.role === 'employee');
-        const log = makeLog('brief_approved', req.status, 'Design Progress');
+        const log = makeLog('brief_approved', req.status, 'Design');
         updateRequest(id, {
           approvedBy: newApprovedBy,
           assigneeIds: req.assigneeIds.length > 0 ? req.assigneeIds : (employee ? [employee.id] : []),
-          status: 'Design Progress',
+          status: 'Design',
           activityLog: [...(req.activityLog ?? []), log],
         });
       } else {

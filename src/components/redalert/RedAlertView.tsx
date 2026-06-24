@@ -34,14 +34,14 @@ export default function RedAlertView() {
   const [sortKey, setSortKey] = useState<keyof ContentRequest>('postDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
-  const active = requests.filter(r => r.status !== 'Done');
+  const active = requests.filter(r => r.status !== 'Approved' && r.status !== 'Posted');
   const overdue = active.filter(r => getUrgency(r) === 'overdue').length;
   const within48h = active.filter(r => {
     const d = daysToDeadline(r.internalDeadline);
     return d >= 0 && d < 2;
   }).length;
   const onTrack = active.filter(r => getUrgency(r) === 'on-track').length;
-  const shipped = requests.filter(r => r.status === 'Done' && r.approvedAt).length;
+  const shipped = requests.filter(r => r.status === 'Approved' && r.approvedAt).length;
 
   const sortedRequests = [...requests].sort((a, b) => {
     const av = a[sortKey], bv = b[sortKey];
@@ -114,7 +114,7 @@ export default function RedAlertView() {
               {sortedRequests.map(req => {
                 const urgency = getUrgency(req);
                 const days = daysToDeadline(req.internalDeadline);
-                const urgencyPct = req.status === 'Done' ? 100 :
+                const urgencyPct = req.status === 'Approved' || req.status === 'Posted' ? 100 :
                   Math.max(0, Math.min(100, ((req.daysNeeded - days) / req.daysNeeded) * 100));
                 const owner = users.find(u => u.id === req.ownerId);
                 const color = urgencyColor[urgency];
@@ -134,7 +134,7 @@ export default function RedAlertView() {
                           />
                         </div>
                         <span className="text-[11px] font-medium w-14 text-right" style={{ color }}>
-                          {req.status === 'Done' ? 'Shipped' : urgency.replace('-', ' ')}
+                          {req.status === 'Approved' || req.status === 'Posted' ? 'Shipped' : urgency.replace('-', ' ')}
                         </span>
                       </div>
                     </td>

@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
-import { Paperclip } from 'lucide-react';
+import { Paperclip, PlayCircle } from 'lucide-react';
 import type { ContentRequest } from '../../types';
 import { isRedAlert } from '../../utils/deadlineUtils';
 import { pipelineConfig } from '../shared/Badge';
@@ -18,7 +18,7 @@ export default function KanbanCard({ req }: { req: ContentRequest }) {
   const assignees = users.filter(u => req.assigneeIds.includes(u.id));
 
   const handleClick = () => {
-    if (req.status === 'Design Review' || req.status === 'Approved') {
+    if (req.status === 'Design Review') {
       openModal({ type: 'review-feedback', requestId: req.id });
     } else {
       openModal({ type: 'designer-task', requestId: req.id });
@@ -67,6 +67,14 @@ export default function KanbanCard({ req }: { req: ContentRequest }) {
 
         {/* Red alert */}
         {alert && <RedAlertChip req={req} />}
+
+        {/* Started tag */}
+        {req.initiatedAt && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#f3eeff] border border-[#e0d0ff] text-[10px] font-semibold text-[#6d28d9]">
+            <PlayCircle size={9} />
+            Started {format(req.initiatedAt, 'MMM d')}
+          </span>
+        )}
 
         {/* Bottom row */}
         <div className="flex items-center justify-between gap-2 pt-1">

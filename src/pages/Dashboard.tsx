@@ -14,6 +14,7 @@ import ReviewFeedbackModal from '../components/modals/ReviewFeedbackModal';
 import FinalApprovalModal from '../components/modals/FinalApprovalModal';
 import EditPostDateModal from '../components/modals/EditPostDateModal';
 import BackupRestoreModal from '../components/modals/BackupRestoreModal';
+import EditTaskModal from '../components/modals/EditTaskModal';
 
 export default function Dashboard() {
   const { activeView, activeModal } = useApp();
@@ -59,6 +60,10 @@ export default function Dashboard() {
       />
       <BackupRestoreModal
         open={activeModal?.type === 'backup-restore'}
+      />
+      <EditTaskModal
+        open={activeModal?.type === 'edit-task'}
+        requestId={activeModal?.requestId}
       />
     </div>
   );

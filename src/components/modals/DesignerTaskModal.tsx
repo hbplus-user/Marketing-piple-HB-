@@ -1,6 +1,6 @@
-﻿import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
-import { Paperclip, Calendar, Link, Send, ChevronRight, Plus, X, CheckCircle, Clock, UserMinus } from 'lucide-react';
+import { Paperclip, Calendar, Link, Send, ChevronRight, Plus, X, CheckCircle, Clock, UserMinus, Pencil } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Modal from '../shared/Modal';
 import Badge from '../shared/Badge';
@@ -8,11 +8,11 @@ import StatusChip from '../shared/StatusChip';
 import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
-import { daysToDeadline, calcInternalDeadline } from '../../utils/deadlineUtils';
-import { canEditPostDate, isTaskApproved } from '../../utils/permissions';
+import { daysToDeadline } from '../../utils/deadlineUtils';
+import { canEdit, isTaskApproved } from '../../utils/permissions';
 import type { Status } from '../../types';
 
-const STATUSES: Status[] = ['Brief Approval', 'Design Progress', 'Design Review', 'Approved', 'Done', 'Posted'];
+const STATUSES: Status[] = ['Brief Approval', 'Design', 'Design Progress', 'Design Review', 'Approved', 'Posted'];
 
 const QUICK_CHIPS = [
   { emoji: '🎉', label: 'Looks good!' },
@@ -25,23 +25,18 @@ const QUICK_CHIPS = [
 type ActivityTab = 'all' | 'comments' | 'history';
 
 export default function DesignerTaskModal({ open, requestId }: { open: boolean; requestId?: string }) {
-  const { requests, closeModal, updateRequest, openModal, addComment, markAsPosted, submitForReview, acceptTask, removeAssignee, currentUser, users } = useApp();
+  const {
+    requests, closeModal, updateRequest, openModal, addComment,
+    markAsPosted, submitForReview, acceptTask, removeAssignee,
+    initiateDesign, currentUser, users,
+  } = useApp();
 
-  const [commentText, setCommentText]     = useState('');
-  const [refLink, setRefLink]             = useState('');
-  const [showRefLink, setShowRefLink]     = useState(false);
-  const [composerOpen, setComposerOpen]   = useState(false);
-  const [activeTab, setActiveTab]         = useState<ActivityTab>('all');
-  const [dropdownOpen, setDropdownOpen]   = useState(false);
-  
-  // Editing states
-  const [isEditing, setIsEditing]             = useState(false);
-  const [editTitle, setEditTitle]             = useState('');
-  const [editBrief, setEditBrief]             = useState('');
-  const [editAssigneeIds, setEditAssigneeIds] = useState<string[]>([]);
-  const [editPostDateVal, setEditPostDateVal] = useState('');
-  const [editLinks, setEditLinks]             = useState<string[]>([]);
-  const [newLinkInput, setNewLinkInput]       = useState('');
+  const [commentText, setCommentText]   = useState('');
+  const [refLink, setRefLink]           = useState('');
+  const [showRefLink, setShowRefLink]   = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [activeTab, setActiveTab]       = useState<ActivityTab>('all');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [directReqFounder, setDirectReqFounder] = useState(false);
 
   // Submit-for-review form
@@ -58,7 +53,6 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
 
   const req = requests.find(r => r.id === requestId);
 
-  // Flat comment items
   const commentItems = useMemo(() => {
     if (!req) return [];
     return req.rounds.flatMap(round =>
@@ -74,7 +68,6 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
     ).sort((a, b) => a.date.getTime() - b.date.getTime());
   }, [req]);
 
-  // History items derived from request data + activity log
   const historyItems = useMemo(() => {
     if (!req) return [];
     const items: { kind: 'history'; date: Date; userId?: string; text: string }[] = [];
@@ -97,13 +90,13 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
     }
 
     const logLabels: Record<string, string> = {
-      brief_approved:      'approved the brief',
-      submitted_for_review:'submitted for design review',
-      partial_approval:    'partially approved (pending manager sign-off)',
-      final_approval:      'gave final approval',
-      changes_requested:   'requested changes → back to Design Progress',
-      marked_posted:       'marked as posted',
-      status_change:       'changed status',
+      brief_approved:       'approved the brief',
+      submitted_for_review: 'submitted for design review',
+      partial_approval:     'partially approved (pending manager sign-off)',
+      final_approval:       'gave final approval',
+      changes_requested:    'requested changes → back to Design Progress',
+      marked_posted:        'marked as posted',
+      status_change:        'changed status',
     };
     for (const entry of (req.activityLog ?? [])) {
       items.push({
@@ -123,7 +116,6 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
     return [...commentItems, ...historyItems].sort((a, b) => a.date.getTime() - b.date.getTime());
   }, [activeTab, commentItems, historyItems]);
 
-  // Reset review form when modal closes or switches to a different task
   useEffect(() => {
     if (!open) {
       setReviewFormOpen(false);
@@ -141,17 +133,6 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [feedItems.length]);
-
-  // Populate edit fields on edit mode trigger
-  useEffect(() => {
-    if (req && isEditing) {
-      setEditTitle(req.title);
-      setEditBrief(req.brief || '');
-      setEditAssigneeIds(req.assigneeIds);
-      setEditPostDateVal(format(req.postDate, 'yyyy-MM-dd'));
-      setEditLinks(req.referenceLinks || []);
-    }
-  }, [isEditing, req]);
 
   if (!req) return null;
 
@@ -193,20 +174,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
             <StatusChip status={req.status} />
             <RoundBadge round={req.currentRound} />
           </div>
-          {isEditing ? (
-            <div className="space-y-1">
-              <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Edit title</label>
-              <input
-                type="text"
-                value={editTitle}
-                onChange={e => setEditTitle(e.target.value)}
-                placeholder="Request title..."
-                className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20"
-              />
-            </div>
-          ) : (
-            <h2 className="text-base font-bold text-gray-900 m-0">{req.title}</h2>
-          )}
+          <h2 className="text-base font-bold text-gray-900 m-0">{req.title}</h2>
         </div>
 
         {/* Scrollable body */}
@@ -220,8 +188,8 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                 <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wider">Approval Required</h4>
                 <p className="text-xs text-amber-700 mt-1 leading-relaxed">
                   {!req.managerApproved
-                    ? "This request is pending manager approval. Work cannot begin until a manager approves this task."
-                    : "This request has manager approval and is now pending founder sign-off."
+                    ? 'This request is pending manager approval. Work cannot begin until a manager approves this task.'
+                    : 'This request has manager approval and is now pending founder sign-off.'
                   }
                 </p>
               </div>
@@ -230,98 +198,47 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
 
           {/* Brief + metadata */}
           <div className="px-6 py-5 grid grid-cols-3 gap-6">
-            {isEditing ? (
-              <div className="col-span-2 space-y-4">
+            {/* Left col: brief / attachments / links */}
+            <div className="col-span-2 space-y-4">
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Brief</p>
+                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{req.brief || '-'}</p>
+              </div>
+              {req.attachments.length > 0 && (
                 <div>
-                  <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Brief description</label>
-                  <textarea
-                    value={editBrief}
-                    onChange={e => setEditBrief(e.target.value)}
-                    rows={6}
-                    placeholder="Enter brief description..."
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d] resize-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Reference links</label>
-                  <div className="flex gap-2 mb-2">
-                    <input
-                      type="url"
-                      value={newLinkInput}
-                      onChange={e => setNewLinkInput(e.target.value)}
-                      placeholder="Add reference URL..."
-                      className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const trimmed = newLinkInput.trim();
-                        if (trimmed && !editLinks.includes(trimmed)) {
-                          setEditLinks([...editLinks, trimmed]);
-                          setNewLinkInput('');
-                        }
-                      }}
-                      className="px-3 py-1.5 bg-[#a9674d] hover:bg-[#8a4f39] text-white rounded-lg text-xs font-medium"
-                    >
-                      Add
-                    </button>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    {editLinks.map((url, idx) => (
-                      <div key={idx} className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[#f5ece7] border border-[#f5ece7] text-xs text-[#8a4f39]">
-                        <span className="truncate flex-1 pr-2">{url}</span>
-                        <button
-                          type="button"
-                          onClick={() => setEditLinks(editLinks.filter(x => x !== url))}
-                          className="text-red-500 hover:text-red-700 font-bold ml-2"
-                        >
-                          Ã—
-                        </button>
-                      </div>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Attachments</p>
+                  <div className="flex flex-wrap gap-2">
+                    {req.attachments.map(a => (
+                      <span key={a} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-600">
+                        <Paperclip size={11} />{a}
+                      </span>
                     ))}
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="col-span-2 space-y-4">
+              )}
+              {req.referenceLinks.length > 0 && (
                 <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Brief</p>
-                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{req.brief || '-'}</p>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Reference links</p>
+                  <div className="flex flex-col gap-1.5">
+                    {req.referenceLinks.map(url => (
+                      <a
+                        key={url}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#f5ece7] border border-[#f5ece7] text-xs text-[#8a4f39] hover:bg-[#f0ddd5] transition-colors truncate"
+                      >
+                        <Link size={11} className="flex-shrink-0" />
+                        <span className="truncate">{url}</span>
+                      </a>
+                    ))}
+                  </div>
                 </div>
-                {req.attachments.length > 0 && (
-                  <div>
-                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Attachments</p>
-                    <div className="flex flex-wrap gap-2">
-                      {req.attachments.map(a => (
-                        <span key={a} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-600">
-                          <Paperclip size={11} />{a}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {req.referenceLinks.length > 0 && (
-                  <div>
-                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Reference links</p>
-                    <div className="flex flex-col gap-1.5">
-                      {req.referenceLinks.map(url => (
-                        <a
-                          key={url}
-                          href={url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#f5ece7] border border-[#f5ece7] text-xs text-[#8a4f39] hover:bg-[#f0ddd5] transition-colors truncate"
-                        >
-                          <Link size={11} className="flex-shrink-0" />
-                          <span className="truncate">{url}</span>
-                        </a>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-             <div className="space-y-4 bg-gray-50 rounded-xl p-4 self-start">
+              )}
+            </div>
+
+            {/* Right col: metadata */}
+            <div className="space-y-4 bg-gray-50 rounded-xl p-4 self-start">
               {requester && (
                 <div>
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Requester</p>
@@ -342,28 +259,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
               )}
               <div>
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Assigned to</p>
-                {isEditing ? (
-                  <div className="flex flex-col gap-1">
-                    {users.filter(u => u.role !== 'manager').map(u => {
-                      const selected = editAssigneeIds.includes(u.id);
-                      return (
-                        <button
-                          key={u.id}
-                          type="button"
-                          onClick={() => setEditAssigneeIds(prev =>
-                            prev.includes(u.id) ? prev.filter(x => x !== u.id) : [...prev, u.id]
-                          )}
-                          className={`flex items-center gap-2 px-2 py-1 rounded-lg text-xs font-medium transition-colors text-left ${
-                            selected ? 'bg-[#f5ece7] text-[#8a4f39] border border-[#f0ddd5]' : 'bg-white border border-gray-200 text-gray-600 hover:border-[#f0ddd5]'
-                          }`}
-                        >
-                          <Avatar initials={u.initials} color={u.avatarColor} size="sm" />
-                          {u.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : assignees.length > 0 ? (
+                {assignees.length > 0 ? (
                   <div className="flex flex-col gap-1">
                     {assignees.map(u => (
                       <div key={u.id} className="flex items-center gap-2">
@@ -376,6 +272,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                   <span className="text-xs text-gray-400 italic">Unassigned</span>
                 )}
               </div>
+
               {/* Assignee acceptance — visible in Design Progress */}
               {isTaskApproved(req) && req.status === 'Design Progress' && assignees.length > 0 && (
                 <div>
@@ -390,7 +287,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                       return 0;
                     }).map(u => {
                       const acceptance = (req.assigneeAcceptance ?? []).find(a => a.userId === u.id);
-                      const isMe = u.id === currentUser.id;
+                      const isMe  = u.id === currentUser.id;
                       const isMgr = currentUser.role === 'manager';
                       const dateVal = acceptDates[u.id] ?? '';
                       return (
@@ -468,31 +365,30 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
               )}
               <div>
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Post date</p>
-                {isEditing ? (
-                  <input
-                    type="date"
-                    value={editPostDateVal}
-                    onChange={e => setEditPostDateVal(e.target.value)}
-                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20"
-                  />
-                ) : (
-                  <>
-                    <div className="flex items-center gap-1.5 text-xs text-gray-700">
-                      <Calendar size={12} className="text-gray-400" />
-                      {format(req.postDate, 'MMM d, yyyy')}
-                    </div>
-                    <p className="text-[11px] text-gray-500 mt-0.5">
-                      {dtd >= 0 ? `${dtd}d to deadline` : `${Math.abs(dtd)}d overdue`} · needs {req.daysNeeded}d
-                    </p>
-                  </>
-                )}
+                <div className="flex items-center gap-1.5 text-xs text-gray-700">
+                  <Calendar size={12} className="text-gray-400" />
+                  {format(req.postDate, 'MMM d, yyyy')}
+                </div>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  {dtd >= 0 ? `${dtd}d to deadline` : `${Math.abs(dtd)}d overdue`} · needs {req.daysNeeded}d
+                </p>
               </div>
+
+              {/* Started tag — shows once design is initiated */}
+              {req.initiatedAt && (
+                <div>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Started</p>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#f3eeff] border border-[#e0d0ff] text-[11px] font-semibold text-[#6d28d9]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#7c3aed]" />
+                    {format(req.initiatedAt, 'MMM d, yyyy')}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* â"€â"€ Activity â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */}
+          {/* Activity */}
           <div className="px-6 pb-6 border-t border-gray-100">
-            {/* Title + tabs */}
             <div className="flex items-center gap-4 pt-5 mb-4">
               <h3 className="text-sm font-bold text-gray-900">Activity</h3>
               <div className="flex items-center gap-0.5 border border-gray-200 rounded-lg p-0.5">
@@ -507,13 +403,11 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
               </div>
             </div>
 
-            {/* Collapsed composer / Add comment prompt */}
             <div className="flex items-start gap-3 mb-5">
               <Avatar initials={currentUser.initials} color={currentUser.avatarColor} size="sm" />
               <div className="flex-1">
                 <AnimatePresence mode="wait">
                   {!composerOpen ? (
-                    /* Collapsed: clickable placeholder + quick chips */
                     <motion.div key="collapsed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.12 }}>
                       <div
                         onClick={() => openComposer()}
@@ -521,7 +415,6 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                       >
                         Add a comment...
                       </div>
-                      {/* Quick chips */}
                       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
                         {QUICK_CHIPS.map(chip => (
                           <button
@@ -544,7 +437,6 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                       </p>
                     </motion.div>
                   ) : (
-                    /* Expanded composer */
                     <motion.div key="expanded" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
                       <div className="border border-gray-200 rounded-xl focus-within:ring-2 focus-within:ring-[#a9674d]/20 focus-within:border-[#a9674d] overflow-hidden transition-all">
                         {showRefLink && (
@@ -560,7 +452,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                           value={commentText}
                           onChange={e => setCommentText(e.target.value)}
                           onKeyDown={handleKeyDown}
-                          placeholder="Add a comment... (CmdEnter to send, Esc to cancel)"
+                          placeholder="Add a comment... (Cmd+Enter to send, Esc to cancel)"
                           rows={3}
                           className="w-full px-3 pt-3 pb-1 text-sm resize-none focus:outline-none placeholder:text-gray-400"
                         />
@@ -589,7 +481,6 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
               </div>
             </div>
 
-            {/* Feed */}
             {feedItems.length === 0 ? (
               <p className="text-xs text-gray-400 italic pl-9">No activity yet.</p>
             ) : (
@@ -627,7 +518,6 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                       </div>
                     );
                   }
-                  // History item
                   return (
                     <div key={i} className="flex items-center gap-3">
                       {user
@@ -656,308 +546,297 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
             <Paperclip size={13} />
             Attach file
           </button>
-          
+
           <div className="flex flex-col items-end gap-3">
             <div className="flex items-center gap-2">
-              {isEditing ? (
-                <>
-                  <button
-                    onClick={() => setIsEditing(false)}
-                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (!editTitle.trim()) return;
-                      updateRequest(req.id, {
-                        title: editTitle.trim(),
-                        brief: editBrief.trim(),
-                        assigneeIds: editAssigneeIds,
-                        postDate: new Date(editPostDateVal),
-                        internalDeadline: calcInternalDeadline(new Date(editPostDateVal)),
-                        referenceLinks: editLinks,
-                      });
-                      setIsEditing(false);
-                    }}
-                    className="px-4 py-2 text-sm font-semibold bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-                  >
-                    Save Changes
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button onClick={closeModal} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium">Close</button>
-                  
-                  {/* Edit button for eligible roles */}
-                  {canEditPostDate(currentUser.role, req, currentUser.id) && (
+              <button onClick={closeModal} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium">
+                Close
+              </button>
+
+              {/* Edit — only task creator or manager */}
+              {canEdit(currentUser.role, req, currentUser.id) && (
+                <button
+                  onClick={() => openModal({ type: 'edit-task', requestId: req.id })}
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
+                >
+                  <Pencil size={13} />
+                  Edit
+                </button>
+              )}
+
+              {/* Brief-approval stage: approve button for manager/founder */}
+              {!isTaskApproved(req) ? (
+                (currentUser.role === 'manager' || currentUser.role === 'founder') ? (
+                  <div className="flex items-center gap-3 bg-white p-1 rounded-lg border border-gray-200 shadow-sm flex-wrap">
+                    {currentUser.role === 'manager' && !req.managerApproved && (
+                      <label className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-gray-700 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={directReqFounder}
+                          onChange={e => setDirectReqFounder(e.target.checked)}
+                          className="w-3.5 h-3.5 rounded text-[#a9674d] focus:ring-[#a9674d]/30 border-gray-300 cursor-pointer"
+                        />
+                        Require Founder Approval
+                      </label>
+                    )}
                     <button
-                      onClick={() => setIsEditing(true)}
-                      className="px-4 py-2 text-sm font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
-                    >
-                      Edit
-                    </button>
-                  )}
-
-                  {!isTaskApproved(req) ? (
-                    /* Approval Actions in details view */
-                    (currentUser.role === 'manager' || currentUser.role === 'founder') ? (
-                      <div className="flex items-center gap-3 bg-white p-1 rounded-lg border border-gray-200 shadow-sm flex-wrap">
-                        {currentUser.role === 'manager' && !req.managerApproved && (
-                          <label className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-gray-700 cursor-pointer select-none">
-                            <input
-                              type="checkbox"
-                              checked={directReqFounder}
-                              onChange={e => setDirectReqFounder(e.target.checked)}
-                              className="w-3.5 h-3.5 rounded text-[#a9674d] focus:ring-[#a9674d]/30 border-gray-300 cursor-pointer"
-                            />
-                            Require Founder Approval
-                          </label>
-                        )}
-                        <button
-                          onClick={() => {
-                            const isFounder = currentUser.role === 'founder';
-                            const mkLog = (toStatus: import('../../types').Status) => ({
-                              id: `log-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
-                              type: 'brief_approved' as const,
-                              userId: currentUser.id,
-                              timestamp: new Date(),
-                              fromStatus: req.status,
-                              toStatus,
+                      onClick={() => {
+                        const isFounder = currentUser.role === 'founder';
+                        const mkLog = (toStatus: import('../../types').Status) => ({
+                          id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                          type: 'brief_approved' as const,
+                          userId: currentUser.id,
+                          timestamp: new Date(),
+                          fromStatus: req.status,
+                          toStatus,
+                        });
+                        if (!req.managerApproved) {
+                          if (directReqFounder && !isFounder) {
+                            const founderIds = users.filter(u => u.role === 'founder').map(u => u.id);
+                            updateRequest(req.id, {
+                              managerApproved: true,
+                              founderApprovalRequired: true,
+                              founderApproved: false,
+                              reviewerIds: Array.from(new Set([...(req.reviewerIds ?? []), ...founderIds])),
+                              approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
+                              activityLog: [...(req.activityLog ?? []), mkLog('Brief Approval')],
                             });
-                            if (!req.managerApproved) {
-                              if (directReqFounder && !isFounder) {
-                                const founderIds = users.filter(u => u.role === 'founder').map(u => u.id);
-                                updateRequest(req.id, {
-                                  managerApproved: true,
-                                  founderApprovalRequired: true,
-                                  founderApproved: false,
-                                  reviewerIds: Array.from(new Set([...(req.reviewerIds ?? []), ...founderIds])),
-                                  approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
-                                  activityLog: [...(req.activityLog ?? []), mkLog('Brief Approval')],
-                                });
-                              } else {
-                                updateRequest(req.id, {
-                                  managerApproved: true,
-                                  founderApprovalRequired: false,
-                                  founderApproved: true,
-                                  approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
-                                  status: 'Design Progress',
-                                  activityLog: [...(req.activityLog ?? []), mkLog('Design Progress')],
-                                });
-                              }
-                            } else if (req.founderApprovalRequired && !req.founderApproved) {
-                              updateRequest(req.id, {
-                                founderApproved: true,
-                                approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
-                                status: 'Design Progress',
-                                activityLog: [...(req.activityLog ?? []), mkLog('Design Progress')],
-                              });
-                            }
-                          }}
-                          className="px-3.5 py-1.5 rounded-lg bg-[#a9674d] hover:bg-[#8a4f39] text-white text-xs font-semibold shadow-sm transition-colors"
-                        >
-                          Approve Request
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-amber-600 font-semibold px-3 py-1.5 bg-amber-50 rounded-lg border border-amber-100 animate-pulse">
-                        ⏳ Awaiting Approval
-                      </span>
-                    )
-                  ) : (
-                    /* Stage-specific action buttons */
-                    (() => {
-                      const isManager = currentUser.role === 'manager';
-                      const isOwner   = req.ownerId === currentUser.id;
-                      const isAssignee = req.assigneeIds.includes(currentUser.id);
-                      const canSubmit  = isAssignee || isOwner || isManager;
-                      const canPost    = isOwner || isManager;
-                      const postedBy   = req.postedBy ?? [];
-                      const ownerPosted = postedBy.includes(req.ownerId);
-                      const managerPosted = users.some(u => u.role === 'manager' && postedBy.includes(u.id));
-
-                      if (req.status === 'Design Progress' && canSubmit) {
-                        if (!reviewFormOpen) {
-                          return (
-                            <button
-                              onClick={() => setReviewFormOpen(true)}
-                              className="px-4 py-2 text-sm font-semibold bg-[#a9674d] hover:bg-[#8a4f39] text-white rounded-lg transition-colors"
-                            >
-                              Submit for review
-                            </button>
-                          );
+                            closeModal();
+                          } else {
+                            updateRequest(req.id, {
+                              managerApproved: true,
+                              founderApprovalRequired: false,
+                              founderApproved: true,
+                              approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
+                              status: 'Design',
+                              activityLog: [...(req.activityLog ?? []), mkLog('Design')],
+                            });
+                            closeModal();
+                          }
+                        } else if (req.founderApprovalRequired && !req.founderApproved) {
+                          updateRequest(req.id, {
+                            founderApproved: true,
+                            approvedBy: Array.from(new Set([...(req.approvedBy ?? []), currentUser.id])),
+                            status: 'Design',
+                            activityLog: [...(req.activityLog ?? []), mkLog('Design')],
+                          });
+                          closeModal();
                         }
-                        return (
-                          <div className="flex flex-col gap-2 w-80">
-                            <p className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">Submit for review</p>
-                            {/* Link adder */}
-                            <div className="flex gap-1.5">
-                              <input
-                                type="url"
-                                value={reviewLinkInput}
-                                onChange={e => setReviewLinkInput(e.target.value)}
-                                onKeyDown={e => {
-                                  if (e.key === 'Enter') {
-                                    const t = reviewLinkInput.trim();
-                                    if (t && !reviewLinks.includes(t)) { setReviewLinks(prev => [...prev, t]); setReviewLinkInput(''); }
-                                  }
-                                }}
-                                placeholder="Paste file / design link…"
-                                className="flex-1 min-w-0 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
-                              />
-                              <button
-                                onClick={() => {
-                                  const t = reviewLinkInput.trim();
-                                  if (t && !reviewLinks.includes(t)) { setReviewLinks(prev => [...prev, t]); setReviewLinkInput(''); }
-                                }}
-                                className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
-                              >
-                                <Plus size={11} /> Add
-                              </button>
-                            </div>
-                            {reviewLinks.length > 0 && (
-                              <div className="flex flex-col gap-1">
-                                {reviewLinks.map((url, i) => (
-                                  <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#f5ece7] rounded-lg border border-[#f0ddd5]">
-                                    <Link size={10} className="text-[#a9674d] flex-shrink-0" />
-                                    <span className="text-[11px] text-[#8a4f39] truncate flex-1">{url}</span>
-                                    <button onClick={() => setReviewLinks(prev => prev.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500 flex-shrink-0">
-                                      <X size={11} />
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {/* Handoff note */}
-                            <textarea
-                              value={reviewNote}
-                              onChange={e => setReviewNote(e.target.value)}
-                              placeholder="Handoff note for reviewer… (optional)"
-                              rows={2}
-                              className="w-full px-2.5 py-2 text-xs border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
-                            />
-                            <div className="flex items-center gap-2 justify-end">
-                              <button
-                                onClick={() => { setReviewFormOpen(false); setReviewLinks([]); setReviewLinkInput(''); setReviewNote(''); }}
-                                className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                onClick={() => {
-                                  submitForReview(req.id, reviewLinks, reviewNote);
-                                  setReviewFormOpen(false); setReviewLinks([]); setReviewLinkInput(''); setReviewNote('');
-                                  closeModal(); openModal({ type: 'review-feedback', requestId: req.id });
-                                }}
-                                className="px-3.5 py-1.5 text-xs font-semibold bg-[#a9674d] hover:bg-[#8a4f39] text-white rounded-lg transition-colors flex items-center gap-1.5"
-                              >
-                                <Send size={11} /> Submit for review
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      }
+                      }}
+                      className="px-3.5 py-1.5 rounded-lg bg-[#a9674d] hover:bg-[#8a4f39] text-white text-xs font-semibold shadow-sm transition-colors"
+                    >
+                      Approve Request
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-xs text-amber-600 font-semibold px-3 py-1.5 bg-amber-50 rounded-lg border border-amber-100 animate-pulse">
+                    ⏳ Awaiting Approval
+                  </span>
+                )
+              ) : (
+                /* Stage-specific action buttons */
+                (() => {
+                  const isManager  = currentUser.role === 'manager';
+                  const isOwner    = req.ownerId === currentUser.id;
+                  const isAssignee = req.assigneeIds.includes(currentUser.id);
+                  const canSubmit  = isAssignee || isOwner || isManager;
+                  const canPost    = isOwner || isManager;
+                  const postedBy   = req.postedBy ?? [];
+                  const ownerPosted   = postedBy.includes(req.ownerId);
+                  const managerPosted = users.some(u => u.role === 'manager' && postedBy.includes(u.id));
 
-                      if (req.status === 'Done' && canPost) {
-                        const alreadyMarked = postedBy.includes(currentUser.id);
-                        return (
-                          <div className="flex flex-col items-end gap-1.5">
-                            <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
-                              <span className={ownerPosted ? 'text-emerald-600 font-semibold' : 'text-gray-400'}>
-                                {ownerPosted ? '✓' : '○'} Owner
-                              </span>
-                              <span className="text-gray-300">·</span>
-                              <span className={managerPosted ? 'text-emerald-600 font-semibold' : 'text-gray-400'}>
-                                {managerPosted ? '✓' : '○'} Manager
-                              </span>
-                            </div>
-                            {!alreadyMarked ? (
-                              <button
-                                onClick={() => markAsPosted(req.id)}
-                                className="px-4 py-2 text-sm font-semibold bg-[#5b8dd9] hover:bg-[#4a76c0] text-white rounded-lg transition-colors"
-                              >
-                                Mark as Posted
-                              </button>
-                            ) : (
-                              <span className="text-xs text-emerald-600 font-semibold px-3 py-1.5 bg-emerald-50 rounded-lg border border-emerald-100">
-                                ✓ You marked as posted
-                              </span>
-                            )}
-                          </div>
-                        );
-                      }
+                  /* Design — show Initiate button */
+                  if (req.status === 'Design' && canSubmit) {
+                    return (
+                      <button
+                        onClick={() => { initiateDesign(req.id); closeModal(); }}
+                        className="px-4 py-2 text-sm font-semibold bg-[#7c3aed] hover:bg-[#6d28d9] text-white rounded-lg transition-colors"
+                      >
+                        Initiate Design
+                      </button>
+                    );
+                  }
 
-                      if (req.status === 'Posted' && isManager) {
-                        return (
+                  /* Design Progress — submit for review */
+                  if (req.status === 'Design Progress' && canSubmit) {
+                    if (!reviewFormOpen) {
+                      return (
+                        <button
+                          onClick={() => setReviewFormOpen(true)}
+                          className="px-4 py-2 text-sm font-semibold bg-[#a9674d] hover:bg-[#8a4f39] text-white rounded-lg transition-colors"
+                        >
+                          Submit for review
+                        </button>
+                      );
+                    }
+                    return (
+                      <div className="flex flex-col gap-2 w-80">
+                        <p className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">Submit for review</p>
+                        <div className="flex gap-1.5">
+                          <input
+                            type="url"
+                            value={reviewLinkInput}
+                            onChange={e => setReviewLinkInput(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                const t = reviewLinkInput.trim();
+                                if (t && !reviewLinks.includes(t)) { setReviewLinks(prev => [...prev, t]); setReviewLinkInput(''); }
+                              }
+                            }}
+                            placeholder="Paste file / design link…"
+                            className="flex-1 min-w-0 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
+                          />
                           <button
-                            onClick={() => setStatus('Brief Approval')}
-                            className="px-4 py-2 text-sm font-semibold bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-colors"
+                            onClick={() => {
+                              const t = reviewLinkInput.trim();
+                              if (t && !reviewLinks.includes(t)) { setReviewLinks(prev => [...prev, t]); setReviewLinkInput(''); }
+                            }}
+                            className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
                           >
-                            Reopen Request
+                            <Plus size={11} /> Add
                           </button>
-                        );
-                      }
-
-                      // Manager-only status dropdown for other stages
-                      if (isManager) {
-                        return (
-                          <div className="relative">
-                            <button
-                              onClick={() => setDropdownOpen(!dropdownOpen)}
-                              className="px-3 py-2 text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors flex items-center gap-1.5"
-                            >
-                              Change Status
-                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                <path d="M6 9l6 6 6-6" />
-                              </svg>
-                            </button>
-                            <AnimatePresence>
-                              {dropdownOpen && (
-                                <>
-                                  <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
-                                  <motion.div
-                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                    style={{
-                                      position: 'absolute', bottom: '100%', right: 0,
-                                      marginBottom: '8px', width: '180px', background: '#ffffff',
-                                      borderRadius: '12px', border: '1px solid #e2e8f0', padding: '6px', zIndex: 50,
-                                      boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)',
-                                    }}
-                                  >
-                                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2.5 py-1.5">Override Status</div>
-                                    {STATUSES.map(s => (
-                                      <button key={s} onClick={() => { setStatus(s); setDropdownOpen(false); }}
-                                        className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-colors flex items-center justify-between ${req.status === s ? 'bg-[#f5ece7] text-[#a9674d] font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
-                                      >
-                                        {s}
-                                        {req.status === s && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>}
-                                      </button>
-                                    ))}
-                                  </motion.div>
-                                </>
-                              )}
-                            </AnimatePresence>
+                        </div>
+                        {reviewLinks.length > 0 && (
+                          <div className="flex flex-col gap-1">
+                            {reviewLinks.map((url, i) => (
+                              <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#f5ece7] rounded-lg border border-[#f0ddd5]">
+                                <Link size={10} className="text-[#a9674d] flex-shrink-0" />
+                                <span className="text-[11px] text-[#8a4f39] truncate flex-1">{url}</span>
+                                <button onClick={() => setReviewLinks(prev => prev.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500 flex-shrink-0">
+                                  <X size={11} />
+                                </button>
+                              </div>
+                            ))}
                           </div>
-                        );
-                      }
+                        )}
+                        <textarea
+                          value={reviewNote}
+                          onChange={e => setReviewNote(e.target.value)}
+                          placeholder="Handoff note for reviewer… (optional)"
+                          rows={2}
+                          className="w-full px-2.5 py-2 text-xs border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
+                        />
+                        <div className="flex items-center gap-2 justify-end">
+                          <button
+                            onClick={() => { setReviewFormOpen(false); setReviewLinks([]); setReviewLinkInput(''); setReviewNote(''); }}
+                            className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => {
+                              submitForReview(req.id, reviewLinks, reviewNote);
+                              setReviewFormOpen(false); setReviewLinks([]); setReviewLinkInput(''); setReviewNote('');
+                              closeModal(); openModal({ type: 'review-feedback', requestId: req.id });
+                            }}
+                            className="px-3.5 py-1.5 text-xs font-semibold bg-[#a9674d] hover:bg-[#8a4f39] text-white rounded-lg transition-colors flex items-center gap-1.5"
+                          >
+                            <Send size={11} /> Submit for review
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
 
-                      return null;
-                    })()
-                  )}
-                </>
+                  /* Approved — mark as posted */
+                  if (req.status === 'Approved' && canPost) {
+                    const alreadyMarked = postedBy.includes(currentUser.id);
+                    return (
+                      <div className="flex flex-col items-end gap-1.5">
+                        <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                          <span className={ownerPosted ? 'text-emerald-600 font-semibold' : 'text-gray-400'}>
+                            {ownerPosted ? '✓' : '○'} Owner
+                          </span>
+                          <span className="text-gray-300">·</span>
+                          <span className={managerPosted ? 'text-emerald-600 font-semibold' : 'text-gray-400'}>
+                            {managerPosted ? '✓' : '○'} Manager
+                          </span>
+                        </div>
+                        {!alreadyMarked ? (
+                          <button
+                            onClick={() => markAsPosted(req.id)}
+                            className="px-4 py-2 text-sm font-semibold bg-[#5b8dd9] hover:bg-[#4a76c0] text-white rounded-lg transition-colors"
+                          >
+                            Mark as Posted
+                          </button>
+                        ) : (
+                          <span className="text-xs text-emerald-600 font-semibold px-3 py-1.5 bg-emerald-50 rounded-lg border border-emerald-100">
+                            ✓ You marked as posted
+                          </span>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  /* Posted — reopen */
+                  if (req.status === 'Posted' && isManager) {
+                    return (
+                      <button
+                        onClick={() => setStatus('Brief Approval')}
+                        className="px-4 py-2 text-sm font-semibold bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg transition-colors"
+                      >
+                        Reopen Request
+                      </button>
+                    );
+                  }
+
+                  /* Manager override dropdown for other stages */
+                  if (isManager) {
+                    return (
+                      <div className="relative">
+                        <button
+                          onClick={() => setDropdownOpen(!dropdownOpen)}
+                          className="px-3 py-2 text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors flex items-center gap-1.5"
+                        >
+                          Change Status
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <path d="M6 9l6 6 6-6" />
+                          </svg>
+                        </button>
+                        <AnimatePresence>
+                          {dropdownOpen && (
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
+                              <motion.div
+                                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                style={{
+                                  position: 'absolute', bottom: '100%', right: 0,
+                                  marginBottom: '8px', width: '180px', background: '#ffffff',
+                                  borderRadius: '12px', border: '1px solid #e2e8f0', padding: '6px', zIndex: 50,
+                                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)',
+                                }}
+                              >
+                                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-2.5 py-1.5">Override Status</div>
+                                {STATUSES.map(s => (
+                                  <button key={s} onClick={() => { setStatus(s); setDropdownOpen(false); }}
+                                    className={`w-full text-left px-2.5 py-2 rounded-lg text-xs transition-colors flex items-center justify-between ${req.status === s ? 'bg-[#f5ece7] text-[#a9674d] font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
+                                  >
+                                    {s}
+                                    {req.status === s && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>}
+                                  </button>
+                                ))}
+                              </motion.div>
+                            </>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })()
               )}
             </div>
 
-            {/* Stepper progress indicator capsule */}
+            {/* Stepper progress indicator */}
             {isTaskApproved(req) && (
-              <div className="bg-gray-100 rounded-full p-1 flex items-center gap-0.5 border border-gray-200">
+              <div className="bg-gray-100 rounded-full p-1 flex items-center gap-0.5 border border-gray-200 flex-wrap">
                 {STATUSES.map(s => {
-                  const isActive = req.status === s;
-                  const isManager = currentUser.role === 'manager';
-                  return isManager ? (
+                  const isActive  = req.status === s;
+                  const isMgr = currentUser.role === 'manager';
+                  return isMgr ? (
                     <button
                       key={s}
                       onClick={() => setStatus(s)}
@@ -973,9 +852,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                     <span
                       key={s}
                       className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        isActive
-                          ? 'bg-white text-[#a9674d] font-bold shadow-sm'
-                          : 'text-gray-400'
+                        isActive ? 'bg-white text-[#a9674d] font-bold shadow-sm' : 'text-gray-400'
                       }`}
                     >
                       {s}

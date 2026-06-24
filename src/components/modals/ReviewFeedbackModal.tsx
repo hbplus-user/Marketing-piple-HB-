@@ -6,7 +6,7 @@ import Badge from '../shared/Badge';
 import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
-import { canApprove, canRequestChanges, canRemoveCreator, isFullApproval, canEditPostDate } from '../../utils/permissions';
+import { canApprove, canRequestChanges, canRemoveCreator, canEditPostDate } from '../../utils/permissions';
 
 export default function ReviewFeedbackModal({ open, requestId }: { open: boolean; requestId?: string }) {
   const { requests, closeModal, approveRequest, requestChanges, removeCreatorFromApproval, currentUser, openModal, users } = useApp();
@@ -21,11 +21,8 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
   const userCanRemove     = canRemoveCreator(currentUser.role, req, currentUser.id);
   const isManager         = currentUser.role === 'manager';
   const isOwner           = req.ownerId === currentUser.id;
-  const isFull            = isFullApproval(currentUser.role);
   const creatorUser       = users.find(u => u.id === req.requesterId);
   const inApprovedStage   = req.status === 'Approved';
-  // In the Approved stage only the manager can give final sign-off
-  const canApproveHere    = inApprovedStage ? isManager : userCanApprove;
   // In the Approved stage both owner and manager can request changes back to Design Progress
   const canRequestHere    = inApprovedStage ? (isOwner || isManager) : userCanRequest;
 
@@ -229,35 +226,19 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
             )}
 
             {/* Stage-aware context notices */}
-            {!inApprovedStage && userCanApprove && !isFull && (
-              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-100">
-                <ShieldCheck size={13} className="text-amber-500 mt-0.5 flex-shrink-0" />
-                <p className="text-[11px] text-amber-700 leading-relaxed">
-                  Your approval marks this as <strong>Approved</strong>. Manager sign-off is still required to move to Done.
-                </p>
-              </div>
-            )}
-            {!inApprovedStage && isManager && (
+            {req.status === 'Design Review' && userCanApprove && (
               <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100">
                 <ShieldCheck size={13} className="text-emerald-500 mt-0.5 flex-shrink-0" />
                 <p className="text-[11px] text-emerald-700">
-                  As manager, your approval is <strong>final</strong> and marks this request as Done.
+                  Your approval marks this request as <strong>Approved</strong>.
                 </p>
               </div>
             )}
-            {inApprovedStage && isManager && (
-              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100">
-                <ShieldCheck size={13} className="text-emerald-500 mt-0.5 flex-shrink-0" />
-                <p className="text-[11px] text-emerald-700">
-                  This task is <strong>partially approved</strong>. Your approval will mark it as <strong>Done</strong>.
-                </p>
-              </div>
-            )}
-            {inApprovedStage && !isManager && (
+            {req.status === 'Approved' && (
               <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-100">
                 <ShieldCheck size={13} className="text-violet-400 mt-0.5 flex-shrink-0" />
                 <p className="text-[11px] text-violet-700">
-                  You've approved this task. Awaiting <strong>manager final sign-off</strong> to move to Done. You can request changes if needed.
+                  This task has been <strong>Approved</strong>. It can now be marked as posted from the task details view.
                 </p>
               </div>
             )}
@@ -272,19 +253,20 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                   Request changes
                 </button>
               )}
-              {canApproveHere && (
+              {req.status === 'Design Review' && userCanApprove && (
                 <button
                   onClick={handleApprove}
-                  className={`flex-1 py-2 text-xs font-medium text-white rounded-lg transition-colors ${
-                    isFull || inApprovedStage
-                      ? 'bg-emerald-600 hover:bg-emerald-700'
-                      : 'bg-amber-500 hover:bg-amber-600'
-                  }`}
+                  className="flex-1 py-2 text-xs font-medium text-white rounded-lg transition-colors bg-emerald-600 hover:bg-emerald-700"
                 >
-                  {inApprovedStage ? 'Final Approve → Done' : isFull ? 'Final Approve' : 'Partially Approve'}
+                  Approve Design
                 </button>
               )}
-              {!canApproveHere && !canRequestHere && (
+              {req.status === 'Approved' && (
+                <p className="text-[11px] text-emerald-600 font-semibold text-center w-full py-1">
+                  ✓ Task Approved
+                </p>
+              )}
+              {req.status !== 'Approved' && !userCanApprove && !canRequestHere && (
                 <p className="text-[11px] text-gray-400 text-center w-full py-1">
                   You can review and comment, but not approve.
                 </p>

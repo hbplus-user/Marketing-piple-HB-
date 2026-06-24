@@ -355,20 +355,20 @@ export default function WelcomePage({ onEnter }: WelcomePageProps) {
             const todayStart = startOfDay(new Date());
 
             const overdueCount = requests.filter(r => {
-              if (r.status === 'Done' || r.status === 'Posted') return false;
+              if (r.status === 'Approved' || r.status === 'Posted') return false;
               if (!isManagerOrFounder && !r.assigneeIds.includes(currentUser.id)) return false;
               return getUrgency(r) === 'overdue';
             }).length;
 
             const nearDueCount = requests.filter(r => {
-              if (r.status === 'Done' || r.status === 'Posted') return false;
+              if (r.status === 'Approved' || r.status === 'Posted') return false;
               if (!isManagerOrFounder && !r.assigneeIds.includes(currentUser.id)) return false;
               const urgency = getUrgency(r);
               return urgency === 'urgent' || urgency === 'due-soon';
             }).length;
 
             const nearPostCount = requests.filter(r => {
-              if (r.status === 'Done' || r.status === 'Posted') return false;
+              if (r.status === 'Approved' || r.status === 'Posted') return false;
               if (!isManagerOrFounder && !r.assigneeIds.includes(currentUser.id)) return false;
               const diff = differenceInDays(startOfDay(r.postDate), todayStart);
               return diff >= 0 && diff <= 2;

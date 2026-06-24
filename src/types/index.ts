@@ -1,6 +1,6 @@
 export type Pipeline = 'PM' | 'Organic' | 'Internal requirement' | 'Events';
 
-export type Status = 'Brief Approval' | 'Design Progress' | 'Design Review' | 'Approved' | 'Done' | 'Posted';
+export type Status = 'Brief Approval' | 'Design' | 'Design Progress' | 'Design Review' | 'Approved' | 'Posted';
 
 export type ActivityLogType =
   | 'brief_approved'
@@ -85,6 +85,7 @@ export interface ContentRequest {
   submissionLinks: string[];
   submissionNote: string;
   priority?: Priority;
+  initiatedAt?: Date | null;
 }
 
 export type View = 'kanban' | 'calendar' | 'gantt' | 'redalert' | 'mytasks';
@@ -105,7 +106,8 @@ export type ModalType =
   | 'review-feedback'
   | 'final-approval'
   | 'edit-post-date'
-  | 'backup-restore';
+  | 'backup-restore'
+  | 'edit-task';
 
 export interface ModalState {
   type: ModalType;

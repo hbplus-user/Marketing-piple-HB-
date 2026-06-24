@@ -135,7 +135,7 @@ export default function MyTasksView() {
   );
 
   const totalAssigned = requests.filter(r => r.assigneeIds.includes(currentUser.id)).length;
-  const activeCount   = myTasks.filter(r => r.status !== 'Done' && r.status !== 'Posted').length;
+  const activeCount   = myTasks.filter(r => r.status !== 'Approved' && r.status !== 'Posted').length;
   const highCount     = myTasks.filter(r => r.priority === 'high').length;
 
   return (
