@@ -93,7 +93,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
       postDate: postDateObj,
       internalDeadline: internalDeadline,
       daysNeeded,
-      rounds: [{ round: 0, comments: [], status: 'pending' }],
+      rounds: [{ round: 0, comments: [], status: 'pending', submissionLinks: [], submissionNote: '' }],
       currentRound: 0,
       attachments: [],
       referenceLinks,
@@ -108,8 +108,6 @@ export default function NewRequestModal({ open }: { open: boolean }) {
       activityLog: [],
       postedBy: [],
       assigneeAcceptance: [],
-      submissionLinks: [],
-      submissionNote: '',
       category: pipeline === 'Organic' ? (category || null) : null,
     });
     reset();

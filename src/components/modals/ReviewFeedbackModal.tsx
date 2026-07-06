@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { Paperclip, Link, ExternalLink, UserMinus, ShieldCheck } from 'lucide-react';
+import { Paperclip, Link, ExternalLink, UserMinus, ShieldCheck, Calendar } from 'lucide-react';
 import Modal from '../shared/Modal';
 import Badge from '../shared/Badge';
 import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 import { canApprove, canRequestChanges, canRemoveCreator, canEditPostDate } from '../../utils/permissions';
+import { isValidUrl } from '../../utils/validation';
 
 export default function ReviewFeedbackModal({ open, requestId }: { open: boolean; requestId?: string }) {
   const { requests, closeModal, approveRequest, requestChanges, removeCreatorFromApproval, currentUser, openModal, users } = useApp();
@@ -15,6 +16,13 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
   const [requireFounder, setRequireFounder] = useState(false);
 
   const req = requests.find(r => r.id === requestId);
+
+  // Pre-check "Require Founder Approval" when it already carried over from Brief
+  // Approval, but leave it fully editable — the Manager can still override it.
+  useEffect(() => {
+    setRequireFounder(req?.founderApprovalRequired === true);
+  }, [requestId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!req) return null;
 
   const userCanApprove  = canApprove(currentUser.role, req, currentUser.id);
@@ -28,11 +36,39 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
     ? (req.approvedBy ?? []).map(id => users.find(u => u.id === id)).filter(Boolean)
     : [];
   const alreadyApproved = (req.approvedBy ?? []).includes(currentUser.id);
+  const currentRoundData = req.rounds.find(r => r.round === req.currentRound);
+  const ownerUser      = users.find(u => u.id === req.ownerId);
+  const reviewerUsers   = req.reviewerIds.map(id => users.find(u => u.id === id)).filter(Boolean);
+  const followerUsers   = (req.followerIds ?? []).map(id => users.find(u => u.id === id)).filter(Boolean);
+  const assigneeUsers   = req.assigneeIds.map(id => users.find(u => u.id === id)).filter(Boolean);
+
+  const historyLabels: Record<string, string> = {
+    brief_approved:       'approved the brief',
+    submitted_for_review: 'submitted for design review',
+    partial_approval:     'partially approved (pending manager sign-off)',
+    final_approval:       'gave final approval',
+    changes_requested:    'requested changes',
+    marked_posted:        'marked as posted',
+    status_change:        'changed status',
+  };
+  const historyItems = [
+    { date: req.createdAt, userId: req.requesterId as string | undefined, text: 'created this request' },
+    ...req.postDateHistory.map(h => ({ date: h.date, userId: h.changedBy as string | undefined, text: `changed the post date — ${h.reason}` })),
+    ...(req.activityLog ?? []).map(e => ({ date: e.timestamp, userId: e.userId as string | undefined, text: historyLabels[e.type] ?? e.type })),
+  ].sort((a, b) => a.date.getTime() - b.date.getTime());
   const inApprovedStage = req.status === 'Approved';
   const canRequestHere  = inApprovedStage ? (isOwner || isManager) : userCanRequest;
 
-  // Founders in the Approved stage — they can give final sign-off
-  const founderCanFinalize = isFounder && inApprovedStage;
+  // A founder requirement set at Brief Approval carries forward automatically —
+  // the checkbox below is pre-checked from it, but the Manager can still edit it.
+  const founderCarriedOver = req.founderApprovalRequired === true;
+
+  // Founders in the Approved stage — they can give final sign-off, but only when
+  // founder approval was actually required somewhere along the way.
+  const founderCanFinalize = isFounder && inApprovedStage && founderCarriedOver;
+
+  const refLinkTrimmed = refLink.trim();
+  const refLinkInvalid = refLinkTrimmed.length > 0 && !isValidUrl(refLinkTrimmed);
 
   const handleApprove = () => {
     const id = req.id;
@@ -43,10 +79,10 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
   };
 
   const handleRequestChanges = () => {
-    if (!comment.trim()) return;
+    if (!comment.trim() || refLinkInvalid) return;
     const id = req.id;
     const c  = comment.trim();
-    const rl = refLink.trim() || undefined;
+    const rl = refLinkTrimmed || undefined;
     setComment('');
     setRefLink('');
     closeModal();
@@ -55,10 +91,10 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
 
   return (
     <Modal open={open} onClose={closeModal} size="full">
-      <div className="flex h-[75vh]">
+      <div className="flex flex-col md:flex-row h-auto md:h-[75vh]">
 
         {/* Left: asset preview */}
-        <div className="flex-[3] border-r border-gray-100 flex flex-col">
+        <div className="w-full md:flex-[3] border-b md:border-b-0 md:border-r border-gray-100 flex flex-col">
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 w-full">
             <div className="flex items-center gap-3">
               <span className="text-xs font-mono text-gray-400">{req.id}</span>
@@ -83,12 +119,117 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 space-y-5">
-            {/* Submission links */}
-            {(req.submissionLinks ?? []).length > 0 && (
+            {/* Title + brief */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700">{req.title}</h3>
+              {req.brief && (
+                <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-line mt-1.5">{req.brief}</p>
+              )}
+            </div>
+
+            {/* Details */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Post date</p>
+                <div className="flex items-center gap-1.5 text-xs text-gray-700">
+                  <Calendar size={11} className="text-gray-400" />
+                  {format(req.postDate, 'MMM d, yyyy')}
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Internal deadline</p>
+                <div className="flex items-center gap-1.5 text-xs text-gray-700">
+                  <Calendar size={11} className="text-gray-400" />
+                  {format(req.internalDeadline, 'MMM d, yyyy')}
+                </div>
+              </div>
+              {req.category && (
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Category</p>
+                  <p className="text-xs text-gray-700">{req.category}</p>
+                </div>
+              )}
+              {req.priority && (
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Priority</p>
+                  <p className="text-xs text-gray-700 capitalize">{req.priority}</p>
+                </div>
+              )}
+            </div>
+
+            {/* People */}
+            <div className="grid grid-cols-2 gap-3">
+              {creatorUser && (
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Requester</p>
+                  <div className="flex items-center gap-1.5">
+                    <Avatar initials={creatorUser.initials} color={creatorUser.avatarColor} size="sm" />
+                    <span className="text-xs text-gray-700">{creatorUser.name}</span>
+                  </div>
+                </div>
+              )}
+              {ownerUser && (
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Owner</p>
+                  <div className="flex items-center gap-1.5">
+                    <Avatar initials={ownerUser.initials} color={ownerUser.avatarColor} size="sm" />
+                    <span className="text-xs text-gray-700">{ownerUser.name}</span>
+                  </div>
+                </div>
+              )}
+              {assigneeUsers.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Assignees</p>
+                  <div className="flex -space-x-1">
+                    {assigneeUsers.map(u => u && <Avatar key={u.id} initials={u.initials} color={u.avatarColor} size="sm" title={u.name} />)}
+                  </div>
+                </div>
+              )}
+              {reviewerUsers.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Reviewers</p>
+                  <div className="flex -space-x-1">
+                    {reviewerUsers.map(u => u && <Avatar key={u.id} initials={u.initials} color={u.avatarColor} size="sm" title={u.name} />)}
+                  </div>
+                </div>
+              )}
+              {followerUsers.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Followers</p>
+                  <div className="flex -space-x-1">
+                    {followerUsers.map(u => u && <Avatar key={u.id} initials={u.initials} color={u.avatarColor} size="sm" title={u.name} />)}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Reference links */}
+            {req.referenceLinks.length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Reference links</p>
+                <div className="flex flex-col gap-1.5">
+                  {req.referenceLinks.map(url => (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-gray-100 transition-colors"
+                    >
+                      <Link size={11} className="flex-shrink-0" />
+                      <span className="truncate flex-1">{url}</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Submission links — current round */}
+            {(currentRoundData?.submissionLinks ?? []).length > 0 && (
               <div>
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Submitted links</p>
                 <div className="flex flex-col gap-1.5">
-                  {req.submissionLinks.map((url, i) => (
+                  {currentRoundData!.submissionLinks.map((url, i) => (
                     <a
                       key={i}
                       href={url}
@@ -104,21 +245,21 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
               </div>
             )}
 
-            {/* Handoff note */}
-            {req.submissionNote && (
+            {/* Handoff note — current round */}
+            {currentRoundData?.submissionNote && (
               <div>
                 <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Handoff note</p>
                 <div className="px-3 py-2.5 bg-gray-50 rounded-xl border border-gray-100 text-xs text-gray-700 leading-relaxed whitespace-pre-line">
-                  {req.submissionNote}
+                  {currentRoundData.submissionNote}
                 </div>
               </div>
             )}
 
-            {/* Title + attachments */}
-            <div>
-              <h3 className="text-sm font-semibold text-gray-700">{req.title}</h3>
-              {req.attachments.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2">
+            {/* Attachments */}
+            {req.attachments.length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Attachments</p>
+                <div className="flex flex-wrap gap-2">
                   {req.attachments.map(a => (
                     <a
                       key={a}
@@ -132,13 +273,38 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                     </a>
                   ))}
                 </div>
-              )}
+              </div>
+            )}
+
+            {/* Full history — every stage change from creation onward */}
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">History</p>
+              <div className="space-y-2.5">
+                {historyItems.map((item, i) => {
+                  const user = users.find(u => u.id === item.userId);
+                  return (
+                    <div key={i} className="flex items-center gap-2">
+                      {user
+                        ? <Avatar initials={user.initials} color={user.avatarColor} size="sm" />
+                        : <div className="w-6 h-6 rounded-full bg-gray-200 flex-shrink-0" />
+                      }
+                      <p className="text-[12px] text-gray-500">
+                        <span className="font-semibold text-gray-700">{user?.name ?? 'System'}</span>{' '}
+                        {item.text}
+                        <span className="ml-2 text-[11px] text-gray-400">
+                          · {format(item.date, 'MMM d, yyyy')} at {format(item.date, 'h:mm a')}
+                        </span>
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
 
         {/* Right: feedback thread */}
-        <div className="flex-[2] flex flex-col">
+        <div className="w-full md:flex-[2] flex flex-col">
           <div className="px-5 py-4 border-b border-gray-100">
             <h3 className="text-sm font-bold text-gray-900">Feedback thread</h3>
           </div>
@@ -157,6 +323,25 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                     {round.status.replace('-', ' ')}
                   </span>
                 </div>
+                {(round.submissionLinks.length > 0 || round.submissionNote) && (
+                  <div className="mb-3 px-3 py-2 bg-[#f5ece7] rounded-lg border border-[#f0ddd5] space-y-1.5">
+                    {round.submissionNote && (
+                      <p className="text-xs text-[#8a4f39] whitespace-pre-line">{round.submissionNote}</p>
+                    )}
+                    {round.submissionLinks.map((url, i) => (
+                      <a
+                        key={i}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 text-[11px] text-[#a9674d] hover:text-[#8a4f39] truncate"
+                      >
+                        <ExternalLink size={10} className="flex-shrink-0" />
+                        <span className="truncate">{url}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
                 {round.comments.length === 0 ? (
                   <p className="text-xs text-gray-400 italic px-1">No comments yet.</p>
                 ) : (
@@ -204,15 +389,24 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
             />
 
             {/* Reference link */}
-            <div className="relative">
-              <Link size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="url"
-                value={refLink}
-                onChange={e => setRefLink(e.target.value)}
-                placeholder="Reference link (optional)"
-                className="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
-              />
+            <div>
+              <div className="relative">
+                <Link size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="url"
+                  value={refLink}
+                  onChange={e => setRefLink(e.target.value)}
+                  placeholder="Reference link (optional)"
+                  className={`w-full pl-7 pr-3 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-2 ${
+                    refLinkInvalid
+                      ? 'border-red-300 focus:ring-red-100 focus:border-red-400'
+                      : 'border-gray-200 focus:ring-[#a9674d]/20 focus:border-[#a9674d]'
+                  }`}
+                />
+              </div>
+              {refLinkInvalid && (
+                <p className="text-[11px] text-red-500 mt-1">Enter a valid link, e.g. https://example.com</p>
+              )}
             </div>
 
             {/* Remove creator from approval chain */}
@@ -243,7 +437,10 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                   className="w-3.5 h-3.5 rounded accent-violet-600 cursor-pointer"
                 />
                 <ShieldCheck size={13} className="text-violet-500 flex-shrink-0" />
-                <span className="text-[12px] font-semibold text-violet-700">Require Founder Approval</span>
+                <span className="text-[12px] font-semibold text-violet-700">
+                  Require Founder Approval
+                  {founderCarriedOver && requireFounder && <span className="font-normal"> — carried over from Brief Approval</span>}
+                </span>
               </label>
             )}
 
@@ -282,7 +479,7 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                 </p>
               </div>
             )}
-            {inApprovedStage && !founderCanFinalize && (
+            {inApprovedStage && founderCarriedOver && !founderCanFinalize && (
               <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-100">
                 <ShieldCheck size={13} className="text-violet-400 mt-0.5 flex-shrink-0" />
                 <p className="text-[11px] text-violet-700">
@@ -303,7 +500,7 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
               {canRequestHere && (
                 <button
                   onClick={handleRequestChanges}
-                  disabled={!comment.trim()}
+                  disabled={!comment.trim() || refLinkInvalid}
                   className="flex-1 py-2 text-xs font-medium border border-gray-200 hover:bg-gray-50 disabled:opacity-40 text-gray-700 rounded-lg transition-colors"
                 >
                   Request changes
@@ -336,7 +533,7 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                 </button>
               )}
 
-              {inApprovedStage && !founderCanFinalize && !isManager && (
+              {inApprovedStage && founderCarriedOver && !founderCanFinalize && !isManager && (
                 <p className="text-[11px] text-violet-600 font-semibold text-center w-full py-1">
                   ⏳ Awaiting founder sign-off
                 </p>

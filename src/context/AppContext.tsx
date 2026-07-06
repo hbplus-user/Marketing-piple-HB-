@@ -47,6 +47,14 @@ const PIPELINE_MIGRATION: Record<string, Pipeline> = {
 function migrateRequest(r: ContentRequest): ContentRequest {
   const migratedStatus   = STATUS_MIGRATION[r.status as string]   ?? r.status;
   const migratedPipeline = PIPELINE_MIGRATION[r.pipeline as string] ?? r.pipeline;
+  // Legacy rows stored one shared submission on the request itself; carry it into
+  // whichever round was active so older data still shows its submitted links/note.
+  const legacy = r as unknown as { submissionLinks?: string[]; submissionNote?: string };
+  const rounds = (r.rounds ?? []).map((round, i) => ({
+    ...round,
+    submissionLinks: round.submissionLinks ?? (i === (r.currentRound ?? 0) ? legacy.submissionLinks ?? [] : []),
+    submissionNote:  round.submissionNote  ?? (i === (r.currentRound ?? 0) ? legacy.submissionNote  ?? '' : ''),
+  }));
   return {
     ...r,
     status:   migratedStatus,
@@ -58,8 +66,7 @@ function migrateRequest(r: ContentRequest): ContentRequest {
     founderApproved:     r.founderApproved     ?? false,
     assigneeAcceptance:  r.assigneeAcceptance  ?? [],
     followerIds:         r.followerIds         ?? [],
-    submissionLinks:     r.submissionLinks     ?? [],
-    submissionNote:      r.submissionNote      ?? '',
+    rounds,
     initiatedAt:         r.initiatedAt         ?? null,
     category:            r.category            ?? null,
   };
@@ -385,14 +392,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       let newStatus: Status = target.status;
       let newApprovedAt = target.approvedAt;
       let isFinal = false;
+      // A founder requirement set back at Brief Approval carries forward automatically —
+      // the Manager doesn't need to re-check "Require Founder Approval" at Design Review too.
+      let founderApprovalRequired = target.founderApprovalRequired;
 
       if (target.status === 'Design Review') {
         if (isManager) {
+          const founderRequired = requireFounderReview || target.founderApprovalRequired === true;
+          founderApprovalRequired = founderRequired;
           // Manager is the only one who can advance the stage — with founder review
           // required it still moves to Approved, just pending founder sign-off there.
           newStatus = 'Approved';
-          newApprovedAt = requireFounderReview ? null : now;
-          isFinal = !requireFounderReview;
+          newApprovedAt = founderRequired ? null : now;
+          isFinal = !founderRequired;
         }
         // Owner/Founder approving here is partial: recorded in approvedBy below,
         // but the task stays in Design Review until a Manager also signs off.
@@ -411,6 +423,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...target,
         status: newStatus,
         approvedAt: newApprovedAt,
+        founderApprovalRequired,
         approvedBy: Array.from(new Set([...(target.approvedBy ?? []), currentUser.id])),
         rounds: updatedRounds,
         activityLog: [...(target.activityLog ?? []), logEntry],
@@ -429,15 +442,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const target = prev.find(r => r.id === id);
       if (!target) return prev;
       const newPostedBy = Array.from(new Set([...(target.postedBy ?? []), currentUser.id]));
-      const ownerMarked = newPostedBy.includes(target.ownerId);
-      const managerMarked = users.some(u => u.role === 'manager' && newPostedBy.includes(u.id));
-      const readyToPost = ownerMarked && managerMarked;
-      const newStatus: Status = readyToPost ? 'Posted' : target.status;
-      const logEntry = makeLogEntry('marked_posted', target.status, newStatus);
+      const logEntry = makeLogEntry('marked_posted', target.status, 'Posted');
       const updated: ContentRequest = {
         ...target,
         postedBy: newPostedBy,
-        status: newStatus,
+        status: 'Posted',
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
       if (authUser) {
@@ -447,7 +456,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [currentUser.id, makeLogEntry, users, authUser]);
+  }, [currentUser.id, makeLogEntry, authUser]);
 
   const initiateDesign = useCallback((id: string) => {
     const now = new Date();
@@ -476,11 +485,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const target = prev.find(r => r.id === id);
       if (!target) return prev;
       const logEntry = makeLogEntry('submitted_for_review', target.status, 'Design Review', note || undefined);
+      const updatedRounds = target.rounds.map((round, i) =>
+        i === target.currentRound ? { ...round, submissionLinks: links, submissionNote: note } : round
+      );
       const updated: ContentRequest = {
         ...target,
         status: 'Design Review' as const,
-        submissionLinks: links,
-        submissionNote: note,
+        rounds: updatedRounds,
         approvedBy: [],
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
@@ -557,6 +568,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         round: target.currentRound + 1,
         comments: comment ? [{ userId: currentUser.id, text: comment, createdAt: new Date(), referenceLink }] : [],
         status: 'pending' as const,
+        submissionLinks: [],
+        submissionNote: '',
       };
       const logEntry = makeLogEntry('changes_requested', target.status, 'Design Progress', comment);
       const updated: ContentRequest = {

@@ -10,7 +10,7 @@ import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 import { daysToDeadline } from '../../utils/deadlineUtils';
 import { canEdit, canApprove, canWorkOnDesign, isTaskApproved } from '../../utils/permissions';
-import { supabase } from '../../lib/supabase';
+import { isValidUrl } from '../../utils/validation';
 import type { Status } from '../../types';
 
 const STATUSES: Status[] = ['Brief Approval', 'Design', 'Design Progress', 'Design Review', 'Approved', 'Posted'];
@@ -48,11 +48,6 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
 
   // Per-assignee accept date (keyed by userId)
   const [acceptDates, setAcceptDates] = useState<Record<string, string>>({});
-
-  // File attachments
-  const [uploading, setUploading]     = useState(false);
-  const [uploadError, setUploadError] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef   = useRef<HTMLDivElement>(null);
@@ -146,6 +141,8 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
   const assignees = users.filter(u => req.assigneeIds.includes(u.id));
   const owner     = users.find(u => u.id === req.ownerId);
   const reviewers = req.reviewerIds.map(id => users.find(u => u.id === id)).filter(Boolean);
+  const followers = (req.followerIds ?? []).map(id => users.find(u => u.id === id)).filter(Boolean);
+  const currentRoundData = req.rounds.find(r => r.round === req.currentRound);
   const dtd       = daysToDeadline(req.internalDeadline);
 
   const setStatus = (s: Status) => {
@@ -156,29 +153,6 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
   const openComposer = (prefill = '') => {
     setComposerOpen(true);
     if (prefill) setCommentText(prefill);
-  };
-
-  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0 || !req) return;
-    setUploading(true);
-    setUploadError('');
-    const uploaded: string[] = [];
-    for (const file of Array.from(files)) {
-      const path = `${req.id}/${Date.now()}-${file.name}`;
-      const { error } = await supabase.storage.from('request-attachments').upload(path, file);
-      if (error) {
-        setUploadError(`Failed to upload ${file.name}: ${error.message}`);
-        continue;
-      }
-      const { data } = supabase.storage.from('request-attachments').getPublicUrl(path);
-      uploaded.push(data.publicUrl);
-    }
-    if (uploaded.length > 0) {
-      updateRequest(req.id, { attachments: [...req.attachments, ...uploaded] });
-    }
-    setUploading(false);
-    e.target.value = '';
   };
 
   const handleSend = () => {
@@ -225,14 +199,90 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
             </div>
           )}
 
+          {/* Changes Requested — surfaces the latest feedback right at the top so the
+              designer doesn't have to scroll the activity feed to find it */}
+          {req.status === 'Design Progress' && req.currentRound > 0 && (currentRoundData?.comments.length ?? 0) > 0 && (
+            <div className="mx-6 mt-4 p-4 rounded-xl border flex items-start gap-3 bg-amber-50 border-amber-200">
+              <span className="text-lg">✏️</span>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wider">Changes Requested</h4>
+                <div className="mt-1.5 space-y-1.5">
+                  {currentRoundData!.comments.map((c, i) => {
+                    const commenter = users.find(u => u.id === c.userId);
+                    return (
+                      <div key={i}>
+                        <p className="text-xs text-amber-700 leading-relaxed">
+                          {commenter && <span className="font-semibold">{commenter.name}: </span>}
+                          {c.text}
+                        </p>
+                        {c.referenceLink && (
+                          <a
+                            href={c.referenceLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-[11px] text-amber-700 underline hover:text-amber-800 truncate"
+                          >
+                            <Link size={10} className="flex-shrink-0" />
+                            {c.referenceLink}
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Brief + metadata */}
-          <div className="px-6 py-5 grid grid-cols-3 gap-6">
+          <div className="px-6 py-5 grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Left col: brief / attachments / links */}
-            <div className="col-span-2 space-y-4">
+            <div className="md:col-span-2 space-y-4 self-start">
               <div>
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Brief</p>
                 <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{req.brief || '-'}</p>
               </div>
+              {(req.category || req.priority) && (
+                <div className="flex items-center gap-4">
+                  {req.category && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Category</p>
+                      <p className="text-xs text-gray-700">{req.category}</p>
+                    </div>
+                  )}
+                  {req.priority && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Priority</p>
+                      <p className="text-xs text-gray-700 capitalize">{req.priority}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {(currentRoundData?.submissionLinks.length ?? 0) > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Submitted links</p>
+                  <div className="flex flex-col gap-1.5">
+                    {currentRoundData!.submissionLinks.map(url => (
+                      <a
+                        key={url}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#f5ece7] border border-[#f0ddd5] text-xs text-[#8a4f39] hover:bg-[#f0ddd5] transition-colors truncate"
+                      >
+                        <Link size={11} className="flex-shrink-0" />
+                        <span className="truncate">{url}</span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {currentRoundData?.submissionNote && (
+                <div>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Handoff note</p>
+                  <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-line px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">{currentRoundData.submissionNote}</p>
+                </div>
+              )}
               {req.attachments.length > 0 && (
                 <div>
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Attachments</p>
@@ -271,6 +321,158 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                   </div>
                 </div>
               )}
+
+              {/* Activity */}
+              <div className="pt-5 border-t border-gray-100">
+                <div className="flex items-center gap-4 mb-4">
+                  <h3 className="text-sm font-bold text-gray-900">Activity</h3>
+                  <div className="flex items-center gap-0.5 border border-gray-200 rounded-lg p-0.5">
+                    {(['all', 'comments', 'history'] as ActivityTab[]).map(tab => (
+                      <button key={tab} onClick={() => setActiveTab(tab)}
+                        className={`px-3 py-1 rounded-md text-xs font-medium capitalize transition-all ${
+                          activeTab === tab ? 'bg-white shadow-sm text-[#8a4f39] border border-gray-200' : 'text-gray-500 hover:text-gray-700'
+                        }`}>
+                        {tab}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 mb-5">
+                  <Avatar initials={currentUser.initials} color={currentUser.avatarColor} size="sm" />
+                  <div className="flex-1">
+                    <AnimatePresence mode="wait">
+                      {!composerOpen ? (
+                        <motion.div key="collapsed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.12 }}>
+                          <div
+                            onClick={() => openComposer()}
+                            className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-400 cursor-text hover:border-gray-300 hover:bg-gray-50/60 transition-colors"
+                          >
+                            Add a comment...
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                            {QUICK_CHIPS.map(chip => (
+                              <button
+                                key={chip.label}
+                                onClick={() => openComposer(chip.label)}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-full border border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 text-[11px] text-gray-600 font-medium transition-colors"
+                              >
+                                <span>{chip.emoji}</span>
+                                {chip.label}
+                              </button>
+                            ))}
+                            <button className="p-1 rounded-full border border-gray-200 hover:bg-gray-50 text-gray-400 transition-colors">
+                              <ChevronRight size={12} />
+                            </button>
+                          </div>
+                          <p className="text-[11px] text-gray-400 mt-2">
+                            <span className="font-medium">Pro tip:</span> press{' '}
+                            <kbd className="px-1.5 py-0.5 rounded border border-gray-200 bg-gray-100 text-[10px] font-mono">M</kbd>{' '}
+                            to comment
+                          </p>
+                        </motion.div>
+                      ) : (
+                        <motion.div key="expanded" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+                          <div className="border border-gray-200 rounded-xl focus-within:ring-2 focus-within:ring-[#a9674d]/20 focus-within:border-[#a9674d] overflow-hidden transition-all">
+                            {showRefLink && (
+                              <div className="relative border-b border-gray-100">
+                                <Link size={11} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                <input type="url" value={refLink} onChange={e => setRefLink(e.target.value)}
+                                  placeholder="Paste reference URL..."
+                                  className="w-full pl-8 pr-3 py-2 text-xs bg-gray-50 focus:outline-none placeholder:text-gray-400" />
+                              </div>
+                            )}
+                            <textarea
+                              ref={textareaRef}
+                              value={commentText}
+                              onChange={e => setCommentText(e.target.value)}
+                              onKeyDown={handleKeyDown}
+                              placeholder="Add a comment... (Cmd+Enter to send, Esc to cancel)"
+                              rows={3}
+                              className="w-full px-3 pt-3 pb-1 text-sm resize-none focus:outline-none placeholder:text-gray-400"
+                            />
+                            <div className="flex items-center justify-between px-2 pb-2">
+                              <button onClick={() => setShowRefLink(v => !v)}
+                                title={showRefLink ? 'Remove link' : 'Add reference link'}
+                                className={`p-1.5 rounded-lg transition-colors ${showRefLink ? 'bg-[#f0ddd5] text-[#a9674d]' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}>
+                                <Link size={13} />
+                              </button>
+                              <div className="flex items-center gap-2">
+                                <button onClick={() => { setComposerOpen(false); setCommentText(''); }}
+                                  className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors">
+                                  Cancel
+                                </button>
+                                <button onClick={handleSend} disabled={!commentText.trim()}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#a9674d] hover:bg-[#8a4f39] disabled:opacity-40 text-white text-xs font-medium transition-colors">
+                                  <Send size={11} />
+                                  Save
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+
+                {feedItems.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic pl-9">No activity yet.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {feedItems.map((item, i) => {
+                      const user = users.find(u => u.id === item.userId);
+                      if (item.kind === 'comment') {
+                        const isMe = item.userId === currentUser.id;
+                        return (
+                          <div key={i} className="flex items-start gap-3">
+                            {user && <Avatar initials={user.initials} color={user.avatarColor} size="sm" title={user.name} />}
+                            <div className="flex-1">
+                              <div className="flex items-baseline gap-2 mb-1 flex-wrap">
+                                <span className="text-[12px] font-semibold text-gray-800">{user?.name ?? 'Unknown'}</span>
+                                <span className="text-[11px] text-gray-400 capitalize">{user?.role}</span>
+                                {!isMe && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                                    Round {item.round}
+                                  </span>
+                                )}
+                                <span className="text-[11px] text-gray-400 ml-auto">
+                                  {format(item.date, 'MMM d, yyyy')} at {format(item.date, 'h:mm a')}
+                                </span>
+                              </div>
+                              <div className={`rounded-xl px-3 py-2 text-sm text-gray-700 leading-relaxed ${isMe ? 'bg-[#f5ece7]' : 'bg-gray-50'}`}>
+                                {item.text}
+                                {item.referenceLink && (
+                                  <a href={item.referenceLink} target="_blank" rel="noopener noreferrer"
+                                    className="mt-1 flex items-center gap-1 text-[11px] text-[#a9674d] hover:underline truncate">
+                                    <Link size={10} />{item.referenceLink}
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div key={i} className="flex items-center gap-3">
+                          {user
+                            ? <Avatar initials={user.initials} color={user.avatarColor} size="sm" />
+                            : <div className="w-5 h-5 rounded-full bg-gray-200 flex-shrink-0" />
+                          }
+                          <p className="text-[12px] text-gray-500">
+                            <span className="font-semibold text-gray-700">{user?.name ?? 'System'}</span>{' '}
+                            {item.text}
+                            <span className="ml-2 text-[11px] text-gray-400">
+                              · {format(item.date, 'MMM d, yyyy')} at {format(item.date, 'h:mm a')}
+                            </span>
+                          </p>
+                        </div>
+                      );
+                    })}
+                    <div ref={bottomRef} />
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Right col: metadata */}
@@ -414,6 +616,14 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                   </div>
                 </div>
               )}
+              {followers.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Followers</p>
+                  <div className="flex -space-x-1">
+                    {followers.map(u => u && <Avatar key={u.id} initials={u.initials} color={u.avatarColor} size="sm" title={u.name} />)}
+                  </div>
+                </div>
+              )}
               <div>
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Post date</p>
                 <div className="flex items-center gap-1.5 text-xs text-gray-700">
@@ -423,6 +633,13 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                 <p className="text-[11px] text-gray-500 mt-0.5">
                   {dtd >= 0 ? `${dtd}d to deadline` : `${Math.abs(dtd)}d overdue`} · needs {req.daysNeeded}d
                 </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Internal deadline</p>
+                <div className="flex items-center gap-1.5 text-xs text-gray-700">
+                  <Calendar size={12} className="text-gray-400" />
+                  {format(req.internalDeadline, 'MMM d, yyyy')}
+                </div>
               </div>
 
               {/* Started tag — shows once design is initiated */}
@@ -437,181 +654,10 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
               )}
             </div>
           </div>
-
-          {/* Activity */}
-          <div className="px-6 pb-6 border-t border-gray-100">
-            <div className="flex items-center gap-4 pt-5 mb-4">
-              <h3 className="text-sm font-bold text-gray-900">Activity</h3>
-              <div className="flex items-center gap-0.5 border border-gray-200 rounded-lg p-0.5">
-                {(['all', 'comments', 'history'] as ActivityTab[]).map(tab => (
-                  <button key={tab} onClick={() => setActiveTab(tab)}
-                    className={`px-3 py-1 rounded-md text-xs font-medium capitalize transition-all ${
-                      activeTab === tab ? 'bg-white shadow-sm text-[#8a4f39] border border-gray-200' : 'text-gray-500 hover:text-gray-700'
-                    }`}>
-                    {tab}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3 mb-5">
-              <Avatar initials={currentUser.initials} color={currentUser.avatarColor} size="sm" />
-              <div className="flex-1">
-                <AnimatePresence mode="wait">
-                  {!composerOpen ? (
-                    <motion.div key="collapsed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.12 }}>
-                      <div
-                        onClick={() => openComposer()}
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-400 cursor-text hover:border-gray-300 hover:bg-gray-50/60 transition-colors"
-                      >
-                        Add a comment...
-                      </div>
-                      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                        {QUICK_CHIPS.map(chip => (
-                          <button
-                            key={chip.label}
-                            onClick={() => openComposer(chip.label)}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-full border border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 text-[11px] text-gray-600 font-medium transition-colors"
-                          >
-                            <span>{chip.emoji}</span>
-                            {chip.label}
-                          </button>
-                        ))}
-                        <button className="p-1 rounded-full border border-gray-200 hover:bg-gray-50 text-gray-400 transition-colors">
-                          <ChevronRight size={12} />
-                        </button>
-                      </div>
-                      <p className="text-[11px] text-gray-400 mt-2">
-                        <span className="font-medium">Pro tip:</span> press{' '}
-                        <kbd className="px-1.5 py-0.5 rounded border border-gray-200 bg-gray-100 text-[10px] font-mono">M</kbd>{' '}
-                        to comment
-                      </p>
-                    </motion.div>
-                  ) : (
-                    <motion.div key="expanded" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-                      <div className="border border-gray-200 rounded-xl focus-within:ring-2 focus-within:ring-[#a9674d]/20 focus-within:border-[#a9674d] overflow-hidden transition-all">
-                        {showRefLink && (
-                          <div className="relative border-b border-gray-100">
-                            <Link size={11} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                            <input type="url" value={refLink} onChange={e => setRefLink(e.target.value)}
-                              placeholder="Paste reference URL..."
-                              className="w-full pl-8 pr-3 py-2 text-xs bg-gray-50 focus:outline-none placeholder:text-gray-400" />
-                          </div>
-                        )}
-                        <textarea
-                          ref={textareaRef}
-                          value={commentText}
-                          onChange={e => setCommentText(e.target.value)}
-                          onKeyDown={handleKeyDown}
-                          placeholder="Add a comment... (Cmd+Enter to send, Esc to cancel)"
-                          rows={3}
-                          className="w-full px-3 pt-3 pb-1 text-sm resize-none focus:outline-none placeholder:text-gray-400"
-                        />
-                        <div className="flex items-center justify-between px-2 pb-2">
-                          <button onClick={() => setShowRefLink(v => !v)}
-                            title={showRefLink ? 'Remove link' : 'Add reference link'}
-                            className={`p-1.5 rounded-lg transition-colors ${showRefLink ? 'bg-[#f0ddd5] text-[#a9674d]' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}>
-                            <Link size={13} />
-                          </button>
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => { setComposerOpen(false); setCommentText(''); }}
-                              className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors">
-                              Cancel
-                            </button>
-                            <button onClick={handleSend} disabled={!commentText.trim()}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#a9674d] hover:bg-[#8a4f39] disabled:opacity-40 text-white text-xs font-medium transition-colors">
-                              <Send size={11} />
-                              Save
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
-
-            {feedItems.length === 0 ? (
-              <p className="text-xs text-gray-400 italic pl-9">No activity yet.</p>
-            ) : (
-              <div className="space-y-4">
-                {feedItems.map((item, i) => {
-                  const user = users.find(u => u.id === item.userId);
-                  if (item.kind === 'comment') {
-                    const isMe = item.userId === currentUser.id;
-                    return (
-                      <div key={i} className="flex items-start gap-3">
-                        {user && <Avatar initials={user.initials} color={user.avatarColor} size="sm" title={user.name} />}
-                        <div className="flex-1">
-                          <div className="flex items-baseline gap-2 mb-1 flex-wrap">
-                            <span className="text-[12px] font-semibold text-gray-800">{user?.name ?? 'Unknown'}</span>
-                            <span className="text-[11px] text-gray-400 capitalize">{user?.role}</span>
-                            {!isMe && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">
-                                Round {item.round}
-                              </span>
-                            )}
-                            <span className="text-[11px] text-gray-400 ml-auto">
-                              {format(item.date, 'MMM d, yyyy')} at {format(item.date, 'h:mm a')}
-                            </span>
-                          </div>
-                          <div className={`rounded-xl px-3 py-2 text-sm text-gray-700 leading-relaxed ${isMe ? 'bg-[#f5ece7]' : 'bg-gray-50'}`}>
-                            {item.text}
-                            {item.referenceLink && (
-                              <a href={item.referenceLink} target="_blank" rel="noopener noreferrer"
-                                className="mt-1 flex items-center gap-1 text-[11px] text-[#a9674d] hover:underline truncate">
-                                <Link size={10} />{item.referenceLink}
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-                  return (
-                    <div key={i} className="flex items-center gap-3">
-                      {user
-                        ? <Avatar initials={user.initials} color={user.avatarColor} size="sm" />
-                        : <div className="w-5 h-5 rounded-full bg-gray-200 flex-shrink-0" />
-                      }
-                      <p className="text-[12px] text-gray-500">
-                        <span className="font-semibold text-gray-700">{user?.name ?? 'System'}</span>{' '}
-                        {item.text}
-                        <span className="ml-2 text-[11px] text-gray-400">
-                          · {format(item.date, 'MMM d, yyyy')} at {format(item.date, 'h:mm a')}
-                        </span>
-                      </p>
-                    </div>
-                  );
-                })}
-                <div ref={bottomRef} />
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-100 flex items-start justify-between flex-shrink-0 bg-gray-50/60">
-          <div className="flex flex-col gap-1 mt-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={handleFilesSelected}
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors disabled:opacity-50"
-            >
-              <Paperclip size={13} />
-              {uploading ? 'Uploading…' : 'Attach file'}
-            </button>
-            {uploadError && <p className="text-[11px] text-red-500 max-w-[220px]">{uploadError}</p>}
-          </div>
-
+        <div className="px-6 py-4 border-t border-gray-100 flex items-start justify-end flex-shrink-0 bg-gray-50/60">
           <div className="flex flex-col items-end gap-3">
             <div className="flex items-center gap-2">
               <button onClick={closeModal} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 font-medium">
@@ -702,13 +748,11 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                 /* Stage-specific action buttons */
                 (() => {
                   const isManager  = currentUser.role === 'manager';
+                  const isFounder  = currentUser.role === 'founder';
                   const isOwner    = req.ownerId === currentUser.id;
                   const isAssignee = req.assigneeIds.includes(currentUser.id);
                   const canSubmit  = isAssignee || canWorkOnDesign(currentUser.role, req, currentUser.id);
-                  const canPost    = isOwner || isManager;
-                  const postedBy   = req.postedBy ?? [];
-                  const ownerPosted   = postedBy.includes(req.ownerId);
-                  const managerPosted = users.some(u => u.role === 'manager' && postedBy.includes(u.id));
+                  const canPost    = isOwner || isManager || isFounder;
 
                   /* Design — show Initiate button */
                   if (req.status === 'Design' && canSubmit) {
@@ -734,6 +778,14 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                         </button>
                       );
                     }
+                    const reviewLinkTrimmed = reviewLinkInput.trim();
+                    const reviewLinkInvalid = reviewLinkTrimmed.length > 0 && !isValidUrl(reviewLinkTrimmed);
+                    const addReviewLink = () => {
+                      if (reviewLinkTrimmed && !reviewLinkInvalid && !reviewLinks.includes(reviewLinkTrimmed)) {
+                        setReviewLinks(prev => [...prev, reviewLinkTrimmed]);
+                        setReviewLinkInput('');
+                      }
+                    };
                     return (
                       <div className="flex flex-col gap-2 w-80">
                         <p className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">Submit for review</p>
@@ -742,25 +794,25 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                             type="url"
                             value={reviewLinkInput}
                             onChange={e => setReviewLinkInput(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') {
-                                const t = reviewLinkInput.trim();
-                                if (t && !reviewLinks.includes(t)) { setReviewLinks(prev => [...prev, t]); setReviewLinkInput(''); }
-                              }
-                            }}
+                            onKeyDown={e => { if (e.key === 'Enter') addReviewLink(); }}
                             placeholder="Paste file / design link…"
-                            className="flex-1 min-w-0 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
+                            className={`flex-1 min-w-0 px-2.5 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-2 ${
+                              reviewLinkInvalid
+                                ? 'border-red-300 focus:ring-red-100 focus:border-red-400'
+                                : 'border-gray-200 focus:ring-[#a9674d]/20 focus:border-[#a9674d]'
+                            }`}
                           />
                           <button
-                            onClick={() => {
-                              const t = reviewLinkInput.trim();
-                              if (t && !reviewLinks.includes(t)) { setReviewLinks(prev => [...prev, t]); setReviewLinkInput(''); }
-                            }}
-                            className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
+                            onClick={addReviewLink}
+                            disabled={!reviewLinkTrimmed || reviewLinkInvalid}
+                            className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 text-gray-600 rounded-lg text-xs font-medium transition-colors flex items-center gap-1"
                           >
                             <Plus size={11} /> Add
                           </button>
                         </div>
+                        {reviewLinkInvalid && (
+                          <p className="text-[11px] text-red-500 -mt-1">Enter a valid link, e.g. https://example.com</p>
+                        )}
                         {reviewLinks.length > 0 && (
                           <div className="flex flex-col gap-1">
                             {reviewLinks.map((url, i) => (
@@ -810,33 +862,15 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                     );
                   }
 
-                  /* Approved — mark as posted */
+                  /* Approved — mark as posted (Owner, Manager, or Founder — any one) */
                   if (req.status === 'Approved' && canPost) {
-                    const alreadyMarked = postedBy.includes(currentUser.id);
                     return (
-                      <div className="flex flex-col items-end gap-1.5">
-                        <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
-                          <span className={ownerPosted ? 'text-emerald-600 font-semibold' : 'text-gray-400'}>
-                            {ownerPosted ? '✓' : '○'} Owner
-                          </span>
-                          <span className="text-gray-300">·</span>
-                          <span className={managerPosted ? 'text-emerald-600 font-semibold' : 'text-gray-400'}>
-                            {managerPosted ? '✓' : '○'} Manager
-                          </span>
-                        </div>
-                        {!alreadyMarked ? (
-                          <button
-                            onClick={() => markAsPosted(req.id)}
-                            className="px-4 py-2 text-sm font-semibold bg-[#5b8dd9] hover:bg-[#4a76c0] text-white rounded-lg transition-colors"
-                          >
-                            Mark as Posted
-                          </button>
-                        ) : (
-                          <span className="text-xs text-emerald-600 font-semibold px-3 py-1.5 bg-emerald-50 rounded-lg border border-emerald-100">
-                            ✓ You marked as posted
-                          </span>
-                        )}
-                      </div>
+                      <button
+                        onClick={() => markAsPosted(req.id)}
+                        className="px-4 py-2 text-sm font-semibold bg-[#5b8dd9] hover:bg-[#4a76c0] text-white rounded-lg transition-colors"
+                      >
+                        Mark as Posted
+                      </button>
                     );
                   }
 

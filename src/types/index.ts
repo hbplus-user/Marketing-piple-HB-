@@ -45,6 +45,8 @@ export interface ReviewRound {
     referenceLink?: string;
   }[];
   status: 'pending' | 'approved' | 'changes-requested';
+  submissionLinks: string[];
+  submissionNote: string;
 }
 
 export interface AssigneeAcceptance {
@@ -83,8 +85,6 @@ export interface ContentRequest {
   activityLog: ActivityLogEntry[];
   postedBy: string[];                     // both owner + a manager must mark posted
   assigneeAcceptance: AssigneeAcceptance[];
-  submissionLinks: string[];
-  submissionNote: string;
   priority?: Priority;
   initiatedAt?: Date | null;
   category?: string | null;
