@@ -57,6 +57,7 @@ function migrateRequest(r: ContentRequest): ContentRequest {
     founderApprovalRequired: r.founderApprovalRequired ?? false,
     founderApproved:     r.founderApproved     ?? false,
     assigneeAcceptance:  r.assigneeAcceptance  ?? [],
+    followerIds:         r.followerIds         ?? [],
     submissionLinks:     r.submissionLinks     ?? [],
     submissionNote:      r.submissionNote      ?? '',
     initiatedAt:         r.initiatedAt         ?? null,
@@ -82,6 +83,7 @@ interface AppState {
   backups: BackupSnapshot[];
   backupsLoading: boolean;
   setCurrentUser: (user: User) => void;
+  refreshUsers: () => Promise<void>;
   setActiveView: (view: View) => void;
   openModal: (modal: ModalState) => void;
   closeModal: () => void;
@@ -210,48 +212,49 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [authUser, userRole]);
 
   // Load users/profiles from Supabase
-  useEffect(() => {
-    const loadUsers = async () => {
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, name, email, role');
-      
-      if (data && data.length > 0) {
-        const mappedUsers: User[] = data.map(p => {
-          const initials = p.name
-            ? p.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
-            : (p.email?.[0] ?? 'U').toUpperCase();
-          return {
-            id: p.id,
-            name: p.name || 'Unknown User',
-            email: p.email || undefined,
-            role: (p.role as Role) || 'employee',
-            avatarColor: '#3B82F6',
-            initials,
-          };
+  const refreshUsers = useCallback(async () => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, name, email, role');
+
+    if (data && data.length > 0) {
+      const mappedUsers: User[] = data.map(p => {
+        const initials = p.name
+          ? p.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+          : (p.email?.[0] ?? 'U').toUpperCase();
+        return {
+          id: p.id,
+          name: p.name || 'Unknown User',
+          email: p.email || undefined,
+          role: (p.role as Role) || 'employee',
+          avatarColor: '#3B82F6',
+          initials,
+        };
+      });
+
+      // Ensure current authenticated user is included in the list
+      if (authUser && !mappedUsers.some(u => u.id === authUser.id)) {
+        const selfInitials = authUser.user_metadata?.full_name
+          ? authUser.user_metadata.full_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+          : (authUser.email?.[0] ?? 'U').toUpperCase();
+        mappedUsers.push({
+          id: authUser.id,
+          name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
+          email: authUser.email,
+          initials: selfInitials,
+          role: userRole || 'employee',
+          avatarColor: '#3B82F6',
         });
-        
-        // Ensure current authenticated user is included in the list
-        if (authUser && !mappedUsers.some(u => u.id === authUser.id)) {
-          const selfInitials = authUser.user_metadata?.full_name
-            ? authUser.user_metadata.full_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
-            : (authUser.email?.[0] ?? 'U').toUpperCase();
-          mappedUsers.push({
-            id: authUser.id,
-            name: authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || 'User',
-            email: authUser.email,
-            initials: selfInitials,
-            role: userRole || 'employee',
-            avatarColor: '#3B82F6',
-          });
-        }
-        setUsers(mappedUsers);
-      } else {
-        setUsers(USERS);
       }
-    };
-    loadUsers();
-  }, [authUser]);
+      setUsers(mappedUsers);
+    } else {
+      setUsers(USERS);
+    }
+  }, [authUser, userRole]);
+
+  useEffect(() => {
+    refreshUsers();
+  }, [refreshUsers]);
   const [backups, setBackups]         = useState<BackupSnapshot[]>([]);
   const [backupsLoading, setBackupsLoading] = useState(true);
 
@@ -381,22 +384,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const isFounder = currentUser.role === 'founder';
       let newStatus: Status = target.status;
       let newApprovedAt = target.approvedAt;
+      let isFinal = false;
 
       if (target.status === 'Design Review') {
-        if (isManager && requireFounderReview) {
-          newStatus = 'Approved' as Status;
-        } else {
-          newStatus = ((isManager || isFounder) ? 'Done' : 'Approved') as Status;
-          newApprovedAt = (isManager || isFounder) ? now : null;
+        if (isManager) {
+          // Manager is the only one who can advance the stage — with founder review
+          // required it still moves to Approved, just pending founder sign-off there.
+          newStatus = 'Approved';
+          newApprovedAt = requireFounderReview ? null : now;
+          isFinal = !requireFounderReview;
         }
+        // Owner/Founder approving here is partial: recorded in approvedBy below,
+        // but the task stays in Design Review until a Manager also signs off.
       } else if (target.status === 'Approved') {
-        if (isManager || isFounder) { newStatus = 'Done' as Status; newApprovedAt = now; }
+        if (isManager || isFounder) { newApprovedAt = now; isFinal = true; }
       }
 
       const updatedRounds = target.rounds.map((round, i) =>
         i === target.currentRound ? { ...round, status: 'approved' as const } : round
       );
-      const isFinal = (newStatus as string) === 'Done';
       const logEntry = makeLogEntry(
         isFinal ? 'final_approval' : 'partial_approval',
         target.status, newStatus,
@@ -502,6 +508,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const logEntry = makeLogEntry('status_change', target.status, target.status, `accepted task (sequence #${sequence})`);
       const updated: ContentRequest = {
         ...target,
+        assigneeIds: target.assigneeIds.includes(currentUser.id)
+          ? target.assigneeIds
+          : [...target.assigneeIds, currentUser.id],
         assigneeAcceptance: [...(target.assigneeAcceptance ?? []), entry],
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
@@ -722,7 +731,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     <AppContext.Provider value={{
       currentUser, users, requests, filteredRequests, activeView, activeModal,
       activePipelines, dateRange, dateFilterTypes, backups, backupsLoading,
-      setCurrentUser, setActiveView, openModal, closeModal,
+      setCurrentUser, refreshUsers, setActiveView, openModal, closeModal,
       updateRequest, addRequest, approveRequest, markAsPosted,
       initiateDesign, submitForReview, acceptTask, removeAssignee, requestChanges,
       editPostDate, removeCreatorFromApproval, addComment,

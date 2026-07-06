@@ -5,6 +5,7 @@ import Modal from '../shared/Modal';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 import { calcInternalDeadline } from '../../utils/deadlineUtils';
+import { canReassignOwner, canEditReviewers } from '../../utils/permissions';
 import type { Pipeline } from '../../types';
 import CategoryPicker from '../shared/CategoryPicker';
 
@@ -26,7 +27,9 @@ export default function EditTaskModal({ open, requestId }: { open: boolean; requ
   const [internalDeadlineStr, setInternalDeadlineStr] = useState('');
   const [daysNeeded, setDaysNeeded] = useState(3);
   const [category, setCategory]     = useState('');
-  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
+  const [followerIds, setFollowerIds] = useState<string[]>([]);
+  const [ownerId, setOwnerId]       = useState('');
+  const [reviewerIds, setReviewerIds] = useState<string[]>([]);
   const [linkInput, setLinkInput]   = useState('');
   const [referenceLinks, setReferenceLinks] = useState<string[]>([]);
   const linkInputRef = useRef<HTMLInputElement>(null);
@@ -40,7 +43,9 @@ export default function EditTaskModal({ open, requestId }: { open: boolean; requ
       setPostDate(format(req.postDate, 'yyyy-MM-dd'));
       setInternalDeadlineStr(format(req.internalDeadline, 'yyyy-MM-dd'));
       setDaysNeeded(req.daysNeeded);
-      setAssigneeIds(req.assigneeIds);
+      setFollowerIds(req.followerIds ?? []);
+      setOwnerId(req.ownerId);
+      setReviewerIds(req.reviewerIds ?? []);
       setReferenceLinks(req.referenceLinks || []);
       setCategory(req.category || '');
       setLinkInput('');
@@ -70,9 +75,11 @@ export default function EditTaskModal({ open, requestId }: { open: boolean; requ
       postDate: newPostDate,
       internalDeadline: newDeadline,
       daysNeeded,
-      assigneeIds,
+      followerIds,
       referenceLinks,
       category: pipeline === 'Organic' ? (category || null) : null,
+      ...(canReassignOwner(currentUser.role, req, currentUser.id) ? { ownerId } : {}),
+      ...(canEditReviewers(currentUser.role) ? { reviewerIds } : {}),
     });
     closeModal();
   };
@@ -239,23 +246,23 @@ export default function EditTaskModal({ open, requestId }: { open: boolean; requ
           </div>
         </div>
 
-        {/* Assignees */}
+        {/* Followers */}
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-2">
-            Assignees
-            {assigneeIds.length > 0 && (
+            Followers
+            {followerIds.length > 0 && (
               <span className="ml-2 px-1.5 py-0.5 rounded-full bg-[#f0ddd5] text-[#8a4f39] text-[10px] font-bold">
-                {assigneeIds.length} selected
+                {followerIds.length} selected
               </span>
             )}
           </label>
           <div className="flex items-center gap-2 flex-wrap">
             {assignableUsers.map(u => {
-              const selected = assigneeIds.includes(u.id);
+              const selected = followerIds.includes(u.id);
               return (
                 <button
                   key={u.id}
-                  onClick={() => setAssigneeIds(prev =>
+                  onClick={() => setFollowerIds(prev =>
                     prev.includes(u.id) ? prev.filter(x => x !== u.id) : [...prev, u.id]
                   )}
                   className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full border text-xs font-medium transition-all ${
@@ -274,6 +281,64 @@ export default function EditTaskModal({ open, requestId }: { open: boolean; requ
             })}
           </div>
         </div>
+
+        {/* Owner — Requestor or Manager only */}
+        {canReassignOwner(currentUser.role, req, currentUser.id) && (
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-2">Owner</label>
+            <div className="flex items-center gap-2 flex-wrap">
+              {users.map(u => (
+                <button
+                  key={u.id}
+                  onClick={() => setOwnerId(u.id)}
+                  className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                    ownerId === u.id
+                      ? 'border-[#a9674d] bg-[#f5ece7] text-[#8a4f39]'
+                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                  }`}
+                >
+                  <Avatar initials={u.initials} color={u.avatarColor} size="sm" />
+                  <span>{u.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Reviewers — Manager only */}
+        {canEditReviewers(currentUser.role) && (
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-2">
+              Reviewers
+              {reviewerIds.length > 0 && (
+                <span className="ml-2 px-1.5 py-0.5 rounded-full bg-[#f0ddd5] text-[#8a4f39] text-[10px] font-bold">
+                  {reviewerIds.length} selected
+                </span>
+              )}
+            </label>
+            <div className="flex items-center gap-2 flex-wrap">
+              {users.map(u => {
+                const selected = reviewerIds.includes(u.id);
+                return (
+                  <button
+                    key={u.id}
+                    onClick={() => setReviewerIds(prev =>
+                      prev.includes(u.id) ? prev.filter(x => x !== u.id) : [...prev, u.id]
+                    )}
+                    className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                      selected
+                        ? 'border-[#a9674d] bg-[#f5ece7] text-[#8a4f39]'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    <Avatar initials={u.initials} color={u.avatarColor} size="sm" />
+                    <span>{u.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Footer */}

@@ -24,6 +24,10 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
   const isFounder       = currentUser.role === 'founder';
   const isOwner         = req.ownerId === currentUser.id;
   const creatorUser     = users.find(u => u.id === req.requesterId);
+  const partialApprovers = req.status === 'Design Review'
+    ? (req.approvedBy ?? []).map(id => users.find(u => u.id === id)).filter(Boolean)
+    : [];
+  const alreadyApproved = (req.approvedBy ?? []).includes(currentUser.id);
   const inApprovedStage = req.status === 'Approved';
   const canRequestHere  = inApprovedStage ? (isOwner || isManager) : userCanRequest;
 
@@ -243,12 +247,30 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
               </label>
             )}
 
+            {/* Partial approval already recorded — stage hasn't advanced, still needs Manager */}
+            {req.status === 'Design Review' && partialApprovers.length > 0 && (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-100">
+                <ShieldCheck size={13} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                <p className="text-[11px] text-amber-700">
+                  <strong>Partially approved</strong> by {partialApprovers.map(u => u!.name).join(', ')} — still needs a Manager's sign-off to move forward.
+                </p>
+              </div>
+            )}
+
             {/* Context notices */}
-            {req.status === 'Design Review' && userCanApprove && !requireFounder && (
+            {req.status === 'Design Review' && isManager && userCanApprove && !requireFounder && (
               <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-100">
                 <ShieldCheck size={13} className="text-emerald-500 mt-0.5 flex-shrink-0" />
                 <p className="text-[11px] text-emerald-700">
                   Your approval will mark this as <strong>Done</strong>.
+                </p>
+              </div>
+            )}
+            {req.status === 'Design Review' && !isManager && userCanApprove && (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-100">
+                <ShieldCheck size={13} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                <p className="text-[11px] text-amber-700">
+                  This is a <strong>partial approval</strong> — a manager still needs to sign off before this is Done.
                 </p>
               </div>
             )}
@@ -292,13 +314,15 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
               {req.status === 'Design Review' && userCanApprove && (
                 <button
                   onClick={handleApprove}
-                  className={`flex-1 py-2 text-xs font-medium text-white rounded-lg transition-colors ${
+                  disabled={alreadyApproved}
+                  title={alreadyApproved ? "You've already approved — waiting on a manager to finalize" : undefined}
+                  className={`flex-1 py-2 text-xs font-medium text-white rounded-lg transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed disabled:hover:bg-gray-300 ${
                     requireFounder
                       ? 'bg-violet-600 hover:bg-violet-700'
                       : 'bg-emerald-600 hover:bg-emerald-700'
                   }`}
                 >
-                  {requireFounder ? 'Approve & Assign Founder' : 'Approve Design'}
+                  {alreadyApproved ? 'Approved — awaiting manager' : requireFounder ? 'Approve & Assign Founder' : 'Approve Design'}
                 </button>
               )}
 

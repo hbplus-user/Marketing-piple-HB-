@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
-import { Paperclip, PlayCircle } from 'lucide-react';
+import { Paperclip, PlayCircle, ShieldCheck } from 'lucide-react';
 import type { ContentRequest } from '../../types';
 import { isRedAlert } from '../../utils/deadlineUtils';
 import { pipelineConfig } from '../shared/Badge';
@@ -15,6 +15,7 @@ export default function KanbanCard({ req }: { req: ContentRequest }) {
   const alert = isRedAlert(req);
   const pipelineColor = pipelineConfig[req.pipeline]?.dot ?? '#6B7280';
   const assignees = users.filter(u => req.assigneeIds.includes(u.id));
+  const partiallyApproved = req.status === 'Design Review' && (req.approvedBy ?? []).length > 0;
 
   const handleClick = () => {
     if (req.status === 'Design Review') {
@@ -72,6 +73,14 @@ export default function KanbanCard({ req }: { req: ContentRequest }) {
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#f3eeff] border border-[#e0d0ff] text-[10px] font-semibold text-[#6d28d9]">
             <PlayCircle size={9} />
             Started {format(req.initiatedAt, 'MMM d')}
+          </span>
+        )}
+
+        {/* Partial approval tag — awaiting manager sign-off */}
+        {partiallyApproved && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10px] font-semibold text-amber-700">
+            <ShieldCheck size={9} />
+            Partial Approved
           </span>
         )}
 

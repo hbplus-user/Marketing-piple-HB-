@@ -23,7 +23,7 @@ export interface ActivityLogEntry {
 
 export type Priority = 'high' | 'medium' | 'low';
 
-export type Role = 'employee' | 'manager' | 'founder';
+export type Role = 'employee' | 'manager' | 'founder' | 'designer';
 
 export type UrgencyLevel = 'on-track' | 'due-soon' | 'urgent' | 'overdue';
 
@@ -63,6 +63,7 @@ export interface ContentRequest {
   requesterId: string;
   ownerId: string;                        // sole approver (unless manager overrides)
   assigneeIds: string[];
+  followerIds: string[];
   reviewerIds: string[];
   postDate: Date;
   internalDeadline: Date;
@@ -108,7 +109,8 @@ export type ModalType =
   | 'final-approval'
   | 'edit-post-date'
   | 'backup-restore'
-  | 'edit-task';
+  | 'edit-task'
+  | 'manage-team';
 
 export interface ModalState {
   type: ModalType;

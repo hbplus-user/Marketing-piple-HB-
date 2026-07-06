@@ -1,11 +1,12 @@
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard,
-  AlertTriangle, CheckSquare, Inbox, DatabaseBackup, LogOut,
+  AlertTriangle, CheckSquare, Inbox, DatabaseBackup, LogOut, Users,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useRedAlert } from '../../hooks/useRedAlert';
 import { useAuth } from '../../context/AuthContext';
+import { canManageTeam } from '../../utils/permissions';
 
 
 export default function Sidebar() {
@@ -84,6 +85,25 @@ export default function Sidebar() {
           >
             <DatabaseBackup size={15} className="text-[#c4a98a]" />
             <span className="text-[13px] font-medium text-[#d4c5b0]">Backup & Restore</span>
+          </motion.button>
+        </div>
+      )}
+
+      {/* Manage Team — manager only */}
+      {canManageTeam(currentUser.role) && (
+        <div className="px-3 pt-1 space-y-1">
+          <motion.button
+            whileHover={{ scale: 1.01, y: -1 }}
+            whileTap={{ scale: 0.98, y: 0 }}
+            onClick={() => openModal({ type: 'manage-team' })}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-colors"
+            style={{
+              background: 'rgba(255,255,255,0.05)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06), 0 2px 6px rgba(0,0,0,0.2)',
+            }}
+          >
+            <Users size={15} className="text-[#c4a98a]" />
+            <span className="text-[13px] font-medium text-[#d4c5b0]">Manage Team</span>
           </motion.button>
         </div>
       )}

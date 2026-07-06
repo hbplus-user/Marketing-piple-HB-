@@ -33,6 +33,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return data.role as Role;
   };
 
+  // Claims a Manager-issued invite (by email) into a real profile row on first login.
+  const claimInvite = async (userId: string, email: string, name: string | undefined): Promise<Role | null> => {
+    const { data: invite } = await supabase
+      .from('pending_invites')
+      .select('role')
+      .eq('email', email.toLowerCase().trim())
+      .single();
+    if (!invite) return null;
+
+    const { error } = await supabase
+      .from('profiles')
+      .insert({ id: userId, email, name, role: invite.role });
+    if (error) return null;
+
+    await supabase.from('pending_invites').delete().eq('email', email.toLowerCase().trim());
+    return invite.role as Role;
+  };
+
   const validateAndSetSession = async (incoming: Session | null) => {
     if (!incoming) {
       setSession(null);
@@ -53,7 +71,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const role = await fetchRole(incoming.user.id);
+    let role = await fetchRole(incoming.user.id);
+    if (role === null) {
+      role = await claimInvite(incoming.user.id, email, incoming.user.user_metadata?.full_name);
+    }
     setAuthError(null);
     setSession(incoming);
     setUserRole(role);

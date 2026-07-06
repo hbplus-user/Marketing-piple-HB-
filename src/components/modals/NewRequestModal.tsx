@@ -25,7 +25,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
   const [internalDeadlineStr, setInternalDeadlineStr] = useState('');
   const [daysNeeded, setDaysNeeded] = useState(3);
   const [category, setCategory]     = useState('');
-  const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
+  const [followerIds, setFollowerIds] = useState<string[]>([]);
   const [linkInput, setLinkInput]   = useState('');
   const [referenceLinks, setReferenceLinks] = useState<string[]>([]);
   const linkInputRef = useRef<HTMLInputElement>(null);
@@ -41,8 +41,8 @@ export default function NewRequestModal({ open }: { open: boolean }) {
 
   const removeLink = (url: string) => setReferenceLinks(prev => prev.filter(l => l !== url));
 
-  const toggleAssignee = (id: string) =>
-    setAssigneeIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleFollower = (id: string) =>
+    setFollowerIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   const manager = users.find(u => u.role === 'manager') || users.find(u => u.id === currentUser.id) || currentUser;
   const assignableUsers = users.filter(u => u.role !== 'manager');
@@ -67,7 +67,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
   const reset = () => {
     setTitle(''); setBrief(''); setPipeline(null); setCategory('');
     setPostDate(''); setInternalDeadlineStr(''); setDaysNeeded(3);
-    setAssigneeIds([]); setLinkInput(''); setReferenceLinks([]);
+    setFollowerIds([]); setLinkInput(''); setReferenceLinks([]);
   };
 
   const handleSubmit = () => {
@@ -77,7 +77,6 @@ export default function NewRequestModal({ open }: { open: boolean }) {
       return m ? Math.max(max, parseInt(m[1], 10)) : max;
     }, 0);
     const id = `REQ-${String(maxNum + 1).padStart(3, '0')}`;
-    const creatorIsManager = currentUser.role === 'manager';
     const now = new Date();
 
     addRequest({
@@ -87,8 +86,9 @@ export default function NewRequestModal({ open }: { open: boolean }) {
       pipeline,
       status: 'Brief Approval',
       requesterId: currentUser.id,
-      ownerId: creatorIsManager ? currentUser.id : manager.id,
-      assigneeIds,
+      ownerId: currentUser.id,
+      assigneeIds: [],
+      followerIds,
       reviewerIds: [manager.id],
       postDate: postDateObj,
       internalDeadline: internalDeadline,
@@ -116,7 +116,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
     closeModal();
   };
 
-  const isMeSelected = assigneeIds.includes(currentUser.id);
+  const isMeSelected = followerIds.includes(currentUser.id);
 
   return (
     <Modal open={open} onClose={() => { reset(); closeModal(); }} title="New content request" size="lg">
@@ -279,22 +279,22 @@ export default function NewRequestModal({ open }: { open: boolean }) {
           </div>
         </div>
 
-        {/* Assignees - multi-select */}
+        {/* Followers - multi-select */}
         <div>
           <label className="block text-xs font-semibold text-gray-600 mb-2">
-            Assignees
+            Followers
             <span className="ml-1.5 text-gray-400 font-normal">- select one or more</span>
-            {assigneeIds.length > 0 && (
+            {followerIds.length > 0 && (
               <span className="ml-2 px-1.5 py-0.5 rounded-full bg-[#f0ddd5] text-[#8a4f39] text-[10px] font-bold">
-                {assigneeIds.length} selected
+                {followerIds.length} selected
               </span>
             )}
           </label>
           <div className="flex items-center gap-2 flex-wrap">
 
-            {/* Assign to me */}
+            {/* Follow this task */}
             <button
-              onClick={() => toggleAssignee(currentUser.id)}
+              onClick={() => toggleFollower(currentUser.id)}
               className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full border text-xs font-medium transition-all ${
                 isMeSelected
                   ? 'border-green-400 bg-green-50 text-green-700'
@@ -302,7 +302,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
               }`}
             >
               <Avatar initials={currentUser.initials} color={currentUser.avatarColor} size="sm" />
-              <span>Assign to me</span>
+              <span>Follow this task</span>
               {isMeSelected && <CheckCircle size={12} className="text-green-500 ml-0.5" />}
             </button>
 
@@ -311,11 +311,11 @@ export default function NewRequestModal({ open }: { open: boolean }) {
             {assignableUsers
               .filter(u => u.id !== currentUser.id)
               .map(u => {
-                const selected = assigneeIds.includes(u.id);
+                const selected = followerIds.includes(u.id);
                 return (
                   <button
                     key={u.id}
-                    onClick={() => toggleAssignee(u.id)}
+                    onClick={() => toggleFollower(u.id)}
                     className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full border text-xs font-medium transition-all ${
                       selected
                         ? 'border-[#a9674d] bg-[#f5ece7] text-[#8a4f39]'
@@ -333,33 +333,16 @@ export default function NewRequestModal({ open }: { open: boolean }) {
               })}
           </div>
 
-          {assigneeIds.length === 0 && (
+          {followerIds.length === 0 && (
             <p className="text-[11px] text-gray-400 mt-1.5">
-              Optional - can be assigned later from the task view.
+              Optional - can be added later from the task view.
             </p>
           )}
           {isMeSelected && (
             <p className="text-[11px] text-green-600 mt-1.5 font-medium">
-              âœ" This task will appear in your My Tasks section.
+              You'll be notified about updates to this task.
             </p>
           )}
-        </div>
-
-        {/* Manager ownership notice */}
-        <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-violet-50 border border-violet-100">
-          <Avatar initials={manager.initials} color={manager.avatarColor} size="sm" />
-          <div className="flex-1 min-w-0">
-            {currentUser.role === 'manager' ? (
-              <p className="text-[12px] font-medium text-violet-700">
-                You are the <span className="font-bold">owner</span> of this request and have full approval authority.
-              </p>
-            ) : (
-              <p className="text-[12px] font-medium text-violet-700">
-                {manager.name} <span className="text-violet-500 font-normal">will be the <strong>owner</strong> of this request and holds full approval authority.</span>
-              </p>
-            )}
-          </div>
-          <CheckCircle size={14} className="text-violet-400 flex-shrink-0" />
         </div>
 
         {/* Red alert preview */}

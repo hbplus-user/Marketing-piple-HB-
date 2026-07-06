@@ -15,6 +15,7 @@ import FinalApprovalModal from '../components/modals/FinalApprovalModal';
 import EditPostDateModal from '../components/modals/EditPostDateModal';
 import BackupRestoreModal from '../components/modals/BackupRestoreModal';
 import EditTaskModal from '../components/modals/EditTaskModal';
+import ManageTeamModal from '../components/modals/ManageTeamModal';
 
 export default function Dashboard() {
   const { activeView, activeModal } = useApp();
@@ -64,6 +65,9 @@ export default function Dashboard() {
       <EditTaskModal
         open={activeModal?.type === 'edit-task'}
         requestId={activeModal?.requestId}
+      />
+      <ManageTeamModal
+        open={activeModal?.type === 'manage-team'}
       />
 
     </div>

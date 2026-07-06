@@ -48,6 +48,26 @@ export function canViewAllRequests(_role: Role): boolean {
   return true;
 }
 
+/** Only Manager can add/edit Designer or User teammates; Manager/Founder assignment stays backend-only. */
+export function canManageTeam(role: Role): boolean {
+  return role === 'manager';
+}
+
+/** Manager or the original Requestor can reassign who owns the task. */
+export function canReassignOwner(role: Role, req: ContentRequest, userId: string): boolean {
+  return role === 'manager' || req.requesterId === userId;
+}
+
+/** Only Manager can change who's reviewing a task. */
+export function canEditReviewers(role: Role): boolean {
+  return role === 'manager';
+}
+
+/** At Design/Design Progress, any Designer can self-claim the work; owner/manager can also act. */
+export function canWorkOnDesign(role: Role, req: ContentRequest, userId: string): boolean {
+  return role === 'designer' || role === 'manager' || req.ownerId === userId;
+}
+
 /** Only the task creator (requesterId) or a manager can edit a task. */
 export function canEdit(role: Role, req: ContentRequest, userId: string): boolean {
   return role === 'manager' || req.requesterId === userId;

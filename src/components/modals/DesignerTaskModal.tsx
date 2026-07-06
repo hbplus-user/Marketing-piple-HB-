@@ -9,7 +9,7 @@ import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 import { daysToDeadline } from '../../utils/deadlineUtils';
-import { canEdit, canApprove, isTaskApproved } from '../../utils/permissions';
+import { canEdit, canApprove, canWorkOnDesign, isTaskApproved } from '../../utils/permissions';
 import { supabase } from '../../lib/supabase';
 import type { Status } from '../../types';
 
@@ -308,6 +308,21 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                   <span className="text-xs text-gray-400 italic">Unassigned</span>
                 )}
               </div>
+
+              {/* Self-claim — any Designer can pick up unclaimed Design/Design Progress work */}
+              {isTaskApproved(req) &&
+                (req.status === 'Design' || req.status === 'Design Progress') &&
+                currentUser.role === 'designer' &&
+                !assignees.some(u => u.id === currentUser.id) && (
+                <div>
+                  <button
+                    onClick={() => acceptTask(req.id)}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold transition-colors"
+                  >
+                    Pick up this task
+                  </button>
+                </div>
+              )}
 
               {/* Assignee acceptance — visible in Design Progress */}
               {isTaskApproved(req) && req.status === 'Design Progress' && assignees.length > 0 && (
@@ -689,7 +704,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                   const isManager  = currentUser.role === 'manager';
                   const isOwner    = req.ownerId === currentUser.id;
                   const isAssignee = req.assigneeIds.includes(currentUser.id);
-                  const canSubmit  = isAssignee || isOwner || isManager;
+                  const canSubmit  = isAssignee || canWorkOnDesign(currentUser.role, req, currentUser.id);
                   const canPost    = isOwner || isManager;
                   const postedBy   = req.postedBy ?? [];
                   const ownerPosted   = postedBy.includes(req.ownerId);
