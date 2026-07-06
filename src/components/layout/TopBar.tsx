@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { formatDistanceToNow } from 'date-fns';
 import { Bell, Plus, Search } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { useNotifications } from '../../hooks/useNotifications';
 import type { View } from '../../types';
 
 const VIEW_LABELS: Record<View, { title: string; subtitle: string }> = {
@@ -13,14 +15,30 @@ const VIEW_LABELS: Record<View, { title: string; subtitle: string }> = {
 };
 
 export default function TopBar() {
-  const { activeView, openModal } = useApp();
+  const { activeView, openModal, requests } = useApp();
+  const { notifications, unreadCount, markAllRead } = useNotifications();
   const [search, setSearch] = useState('');
-  const [notify, setNotify] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(false);
   const label = VIEW_LABELS[activeView];
+
+  const togglePanel = () => {
+    setPanelOpen(v => {
+      const next = !v;
+      if (next) markAllRead();
+      return next;
+    });
+  };
+
+  const handleNotificationClick = (requestId: string) => {
+    const req = requests.find(r => r.id === requestId);
+    setPanelOpen(false);
+    if (!req) return;
+    openModal({ type: req.status === 'Design Review' ? 'review-feedback' : 'designer-task', requestId });
+  };
 
   return (
     <header
-      className="flex-shrink-0 border-b"
+      className="flex-shrink-0 border-b relative z-20"
       style={{
         background: 'rgba(245,242,233,0.95)',
         backdropFilter: 'blur(12px)',
@@ -60,26 +78,70 @@ export default function TopBar() {
         {/* Right: actions */}
         <div className="flex items-center gap-3 flex-shrink-0">
           {/* Bell */}
-          <motion.button
-            whileHover={{ scale: 1.06, y: -1 }}
-            whileTap={{ scale: 0.94, y: 0 }}
-            onClick={() => setNotify(v => !v)}
-            className="relative p-2 rounded-xl text-[#53372b] hover:text-[#a9674d] transition-colors"
-            style={{
-              background: 'white',
-              boxShadow: '0 1px 3px rgba(83,55,43,0.09), inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -1px 0 rgba(83,55,43,0.05)',
-              border: '1px solid rgba(237,224,208,0.9)',
-            }}
-            aria-label="Notifications"
-          >
-            <Bell size={18} />
-            {notify && (
-              <span
-                className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#9f4022]"
-                style={{ boxShadow: '0 0 0 1.5px white, 0 1px 3px rgba(159,64,34,0.6)' }}
-              />
-            )}
-          </motion.button>
+          <div className="relative">
+            <motion.button
+              whileHover={{ scale: 1.06, y: -1 }}
+              whileTap={{ scale: 0.94, y: 0 }}
+              onClick={togglePanel}
+              className="relative p-2 rounded-xl text-[#53372b] hover:text-[#a9674d] transition-colors"
+              style={{
+                background: 'white',
+                boxShadow: '0 1px 3px rgba(83,55,43,0.09), inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -1px 0 rgba(83,55,43,0.05)',
+                border: '1px solid rgba(237,224,208,0.9)',
+              }}
+              aria-label="Notifications"
+            >
+              <Bell size={18} />
+              {unreadCount > 0 && (
+                <span
+                  className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-[#9f4022] text-white text-[10px] font-bold flex items-center justify-center leading-none"
+                  style={{ boxShadow: '0 0 0 1.5px white, 0 1px 3px rgba(159,64,34,0.6)' }}
+                >
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </motion.button>
+
+            <AnimatePresence>
+              {panelOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setPanelOpen(false)} />
+                  <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.97 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 top-full mt-2 w-80 max-h-96 overflow-y-auto bg-white rounded-xl border border-gray-200 shadow-xl z-50"
+                  >
+                    <div className="px-4 py-3 border-b border-gray-100">
+                      <h3 className="text-sm font-bold text-gray-900">Notifications</h3>
+                    </div>
+                    {notifications.length === 0 ? (
+                      <p className="text-xs text-gray-400 italic px-4 py-6 text-center">You're all caught up.</p>
+                    ) : (
+                      <div className="py-1">
+                        {notifications.map(n => (
+                          <button
+                            key={n.id}
+                            onClick={() => handleNotificationClick(n.requestId)}
+                            className={`w-full text-left px-4 py-2.5 flex items-start gap-2 hover:bg-gray-50 transition-colors ${!n.read ? 'bg-[#f5ece7]/50' : ''}`}
+                          >
+                            {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-[#a9674d] mt-1.5 flex-shrink-0" />}
+                            <div className={n.read ? 'pl-3.5' : ''}>
+                              <p className="text-xs text-gray-700 leading-snug">{n.message}</p>
+                              <p className="text-[10px] text-gray-400 mt-0.5">
+                                {formatDistanceToNow(n.timestamp, { addSuffix: true })}
+                              </p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+          </div>
 
           {/* "+ New" — terracotta clay button */}
           <motion.button

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format } from 'date-fns';
-import { Paperclip, ImageIcon, Link, ExternalLink, UserMinus, ShieldCheck } from 'lucide-react';
+import { Paperclip, Link, ExternalLink, UserMinus, ShieldCheck } from 'lucide-react';
 import Modal from '../shared/Modal';
 import Badge from '../shared/Badge';
 import RoundBadge from '../shared/RoundBadge';
@@ -110,27 +110,25 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
               </div>
             )}
 
-            {/* Asset preview placeholder */}
+            {/* Title + attachments */}
             <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Asset preview</p>
-              <div
-                className="w-full aspect-video rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-3"
-                style={{ backgroundImage: 'repeating-linear-gradient(45deg, #f3f4f6 0, #f3f4f6 10px, #f9fafb 0, #f9fafb 50%)' }}
-              >
-                <ImageIcon size={28} className="text-gray-300" />
-                <p className="text-xs text-gray-400 font-medium">No asset uploaded</p>
-                {req.attachments.length > 0 && (
-                  <div className="flex flex-wrap gap-2 justify-center">
-                    {req.attachments.map(a => (
-                      <span key={a} className="flex items-center gap-1 px-2 py-1 bg-white rounded-lg border border-gray-200 text-xs text-gray-500 shadow-sm">
-                        <Paperclip size={10} />
-                        {a}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <h3 className="mt-3 text-sm font-semibold text-gray-700">{req.title}</h3>
+              <h3 className="text-sm font-semibold text-gray-700">{req.title}</h3>
+              {req.attachments.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {req.attachments.map(a => (
+                    <a
+                      key={a}
+                      href={a}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-50 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-800 transition-colors max-w-[200px]"
+                    >
+                      <Paperclip size={11} className="flex-shrink-0" />
+                      <span className="truncate">{decodeURIComponent(a.split('/').pop() ?? a)}</span>
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

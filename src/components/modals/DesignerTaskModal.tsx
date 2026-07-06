@@ -9,7 +9,8 @@ import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 import { daysToDeadline } from '../../utils/deadlineUtils';
-import { canEdit, isTaskApproved } from '../../utils/permissions';
+import { canEdit, canApprove, isTaskApproved } from '../../utils/permissions';
+import { supabase } from '../../lib/supabase';
 import type { Status } from '../../types';
 
 const STATUSES: Status[] = ['Brief Approval', 'Design', 'Design Progress', 'Design Review', 'Approved', 'Posted'];
@@ -47,6 +48,11 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
 
   // Per-assignee accept date (keyed by userId)
   const [acceptDates, setAcceptDates] = useState<Record<string, string>>({});
+
+  // File attachments
+  const [uploading, setUploading]     = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef   = useRef<HTMLDivElement>(null);
@@ -152,6 +158,29 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
     if (prefill) setCommentText(prefill);
   };
 
+  const handleFilesSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !req) return;
+    setUploading(true);
+    setUploadError('');
+    const uploaded: string[] = [];
+    for (const file of Array.from(files)) {
+      const path = `${req.id}/${Date.now()}-${file.name}`;
+      const { error } = await supabase.storage.from('request-attachments').upload(path, file);
+      if (error) {
+        setUploadError(`Failed to upload ${file.name}: ${error.message}`);
+        continue;
+      }
+      const { data } = supabase.storage.from('request-attachments').getPublicUrl(path);
+      uploaded.push(data.publicUrl);
+    }
+    if (uploaded.length > 0) {
+      updateRequest(req.id, { attachments: [...req.attachments, ...uploaded] });
+    }
+    setUploading(false);
+    e.target.value = '';
+  };
+
   const handleSend = () => {
     if (!commentText.trim()) return;
     addComment(req.id, commentText, refLink.trim() || undefined);
@@ -209,9 +238,16 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Attachments</p>
                   <div className="flex flex-wrap gap-2">
                     {req.attachments.map(a => (
-                      <span key={a} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-600">
-                        <Paperclip size={11} />{a}
-                      </span>
+                      <a
+                        key={a}
+                        href={a}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-800 transition-colors max-w-[220px]"
+                      >
+                        <Paperclip size={11} className="flex-shrink-0" />
+                        <span className="truncate">{decodeURIComponent(a.split('/').pop() ?? a)}</span>
+                      </a>
                     ))}
                   </div>
                 </div>
@@ -542,10 +578,24 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-gray-100 flex items-start justify-between flex-shrink-0 bg-gray-50/60">
-          <button className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors mt-2">
-            <Paperclip size={13} />
-            Attach file
-          </button>
+          <div className="flex flex-col gap-1 mt-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={handleFilesSelected}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors disabled:opacity-50"
+            >
+              <Paperclip size={13} />
+              {uploading ? 'Uploading…' : 'Attach file'}
+            </button>
+            {uploadError && <p className="text-[11px] text-red-500 max-w-[220px]">{uploadError}</p>}
+          </div>
 
           <div className="flex flex-col items-end gap-3">
             <div className="flex items-center gap-2">
@@ -726,10 +776,15 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                           <button
                             onClick={() => {
                               const rid = req.id;
+                              const canReview = canApprove(currentUser.role, req, currentUser.id);
                               closeModal();
                               submitForReview(rid, reviewLinks, reviewNote);
                               setReviewFormOpen(false); setReviewLinks([]); setReviewLinkInput(''); setReviewNote('');
-                              openModal({ type: 'review-feedback', requestId: rid });
+                              // Only drop the user straight into the reviewer screen if they can actually
+                              // act on it (manager/founder/owner) — otherwise just close and confirm.
+                              if (canReview) {
+                                openModal({ type: 'review-feedback', requestId: rid });
+                              }
                             }}
                             className="px-3.5 py-1.5 text-xs font-semibold bg-[#a9674d] hover:bg-[#8a4f39] text-white rounded-lg transition-colors flex items-center gap-1.5"
                           >

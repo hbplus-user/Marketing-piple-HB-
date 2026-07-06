@@ -130,23 +130,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!authUser) return;
     supabaseReady.current = false;
+    let isFirstLoad = true;
+
+    const loadRequests = () => {
+      supabase
+        .from('content_requests')
+        .select('data')
+        .order('updated_at', { ascending: false })
+        .then(({ data, error }) => {
+          if (error) {
+            console.error('[Pipeline] Failed to load requests:', error.message);
+            if (isFirstLoad) setRequests(MOCK_REQUESTS);
+            return;
+          }
+          const fresh = (data ?? []).map(row => migrateRequest(reviveObj(row.data) as ContentRequest));
+          if (isFirstLoad) {
+            setRequests(fresh);
+          } else {
+            // Fallback poll — merge rather than replace, so a transient/partial
+            // response can never silently drop rows the UI already has.
+            setRequests(prev => {
+              const map = new Map(prev.map(r => [r.id, r]));
+              for (const r of fresh) map.set(r.id, r);
+              return Array.from(map.values());
+            });
+          }
+          isFirstLoad = false;
+          supabaseReady.current = true;
+        });
+    };
 
     // Initial load
-    supabase
-      .from('content_requests')
-      .select('data')
-      .order('updated_at', { ascending: false })
-      .then(({ data, error }) => {
-        if (error) {
-          console.error('[Pipeline] Failed to load requests:', error.message);
-          setRequests(MOCK_REQUESTS);
-        } else if (data && data.length > 0) {
-          setRequests(data.map(row => migrateRequest(reviveObj(row.data) as ContentRequest)));
-        } else {
-          setRequests([]);
-        }
-        supabaseReady.current = true;
-      });
+    loadRequests();
 
     // Real-time subscription — any INSERT or UPDATE on the table updates local state instantly
     const channel = supabase
@@ -169,7 +184,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    // Safety-net poll — self-heals if a realtime event gets dropped (e.g. platform incidents)
+    const pollTimer = setInterval(loadRequests, 45_000);
+
+    return () => { supabase.removeChannel(channel); clearInterval(pollTimer); };
   }, [authUser]);
 
 
@@ -332,7 +350,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setRequests(prev => [req, ...prev]);
     // Immediately persist to Supabase so other users see it right away
     if (authUser) {
-      supabase.from('content_requests').upsert({ id: req.id, data: req, updated_at: new Date().toISOString() });
+      supabase.from('content_requests').upsert({ id: req.id, data: req, updated_at: new Date().toISOString() }).then(({ error }) => {
+        if (error) console.error('[Pipeline] Failed to save new request:', error.message);
+      });
     }
   }, [authUser]);
 
