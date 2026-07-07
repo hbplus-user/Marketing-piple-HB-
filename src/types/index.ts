@@ -110,9 +110,12 @@ export type ModalType =
   | 'edit-post-date'
   | 'backup-restore'
   | 'edit-task'
-  | 'manage-team';
+  | 'manage-team'
+  | 'drag-approve';
 
 export interface ModalState {
   type: ModalType;
   requestId?: string;
+  openReviewForm?: boolean;
+  dragTargetStatus?: Status;
 }

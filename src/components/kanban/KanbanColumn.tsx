@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Plus } from 'lucide-react';
 import type { ContentRequest, Status } from '../../types';
@@ -19,8 +20,46 @@ interface KanbanColumnProps {
 }
 
 export default function KanbanColumn({ status, requests }: KanbanColumnProps) {
-  const { openModal } = useApp();
+  const { openModal, requests: allRequests, dragMoveRequest, currentUser } = useApp();
   const color = STATUS_COLORS[status];
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const reqId = e.dataTransfer.getData('text/plain');
+    const dragged = allRequests.find(r => r.id === reqId);
+    if (!dragged || dragged.status === status) return;
+
+    // Designer dragging a card from Design Progress into Design Review opens the
+    // submit-for-review form instead of silently flipping the status — submitting
+    // requires links/notes that only that form collects.
+    if (dragged.status === 'Design Progress' && status === 'Design Review') {
+      openModal({ type: 'designer-task', requestId: reqId, openReviewForm: true });
+      return;
+    }
+
+    // Dragging from Design Review into Approved opens the feedback thread (Request
+    // changes / Approve Design) instead of flipping the status directly — the actual
+    // move only happens once Approve is clicked there, and that same flow already
+    // treats a non-manager approval (owner/requester) as partial, not final.
+    if (dragged.status === 'Design Review' && status === 'Approved') {
+      openModal({ type: 'review-feedback', requestId: reqId });
+      return;
+    }
+
+    // Only a manager can freely drag a card across the board (forward or backward).
+    if (currentUser.role !== 'manager') return;
+
+    // Dragging straight out of Brief Approval is the approval action — prompt for
+    // the assignee and founder-review toggle before approving and moving it.
+    if (dragged.status === 'Brief Approval') {
+      openModal({ type: 'drag-approve', requestId: reqId, dragTargetStatus: status });
+      return;
+    }
+
+    dragMoveRequest(reqId, status);
+  };
 
   return (
     <div className="flex flex-col w-72 flex-shrink-0">
@@ -80,11 +119,14 @@ export default function KanbanColumn({ status, requests }: KanbanColumnProps) {
 
       {/* Column tray — inset 3D container */}
       <div
-        className="flex-1 rounded-2xl p-3 space-y-2.5"
+        onDragOver={e => { e.preventDefault(); if (!isDragOver) setIsDragOver(true); }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={handleDrop}
+        className="flex-1 rounded-2xl p-3 space-y-2.5 transition-colors"
         style={{
-          background: 'rgba(245,242,233,0.6)',
+          background: isDragOver ? 'rgba(169,103,77,0.10)' : 'rgba(245,242,233,0.6)',
           boxShadow: 'inset 0 2px 8px rgba(83,55,43,0.06), inset 0 1px 0 rgba(255,255,255,0.85)',
-          border: '1px solid rgba(237,224,208,0.7)',
+          border: isDragOver ? '1px dashed #a9674d' : '1px solid rgba(237,224,208,0.7)',
           minHeight: 200,
         }}
       >

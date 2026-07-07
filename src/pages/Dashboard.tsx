@@ -16,6 +16,7 @@ import EditPostDateModal from '../components/modals/EditPostDateModal';
 import BackupRestoreModal from '../components/modals/BackupRestoreModal';
 import EditTaskModal from '../components/modals/EditTaskModal';
 import ManageTeamModal from '../components/modals/ManageTeamModal';
+import DragApproveModal from '../components/modals/DragApproveModal';
 
 export default function Dashboard() {
   const { activeView, activeModal } = useApp();
@@ -46,6 +47,7 @@ export default function Dashboard() {
       <DesignerTaskModal
         open={activeModal?.type === 'designer-task'}
         requestId={activeModal?.requestId}
+        openReviewForm={activeModal?.openReviewForm}
       />
       <ReviewFeedbackModal
         open={activeModal?.type === 'review-feedback'}
@@ -68,6 +70,11 @@ export default function Dashboard() {
       />
       <ManageTeamModal
         open={activeModal?.type === 'manage-team'}
+      />
+      <DragApproveModal
+        open={activeModal?.type === 'drag-approve'}
+        requestId={activeModal?.requestId}
+        targetStatus={activeModal?.dragTargetStatus}
       />
 
     </div>

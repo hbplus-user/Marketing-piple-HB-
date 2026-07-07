@@ -103,6 +103,8 @@ interface AppState {
   acceptTask: (id: string, startDate?: Date) => void;
   removeAssignee: (id: string, userId: string) => void;
   assignTask: (id: string, userId: string) => void;
+  dragMoveRequest: (id: string, targetStatus: Status) => void;
+  approveAndMoveRequest: (id: string, targetStatus: Status, assigneeId: string, requireFounder: boolean) => void;
   requestChanges: (id: string, comment: string, referenceLink?: string) => void;
   editPostDate: (id: string, newDate: Date, reason: string) => void;
   removeCreatorFromApproval: (id: string) => void;
@@ -583,6 +585,69 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [makeLogEntry, authUser]);
 
+  // Kanban drag-and-drop: dragging a card back into Brief Approval clears its
+  // approval so it has to be re-approved. Any other plain drag just moves the card.
+  const dragMoveRequest = useCallback((id: string, targetStatus: Status) => {
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target || target.status === targetStatus) return prev;
+
+      let updated: ContentRequest;
+      if (targetStatus === 'Brief Approval') {
+        const logEntry = makeLogEntry('status_change', target.status, targetStatus, 'moved back for re-approval');
+        updated = {
+          ...target,
+          status: targetStatus,
+          managerApproved: false,
+          founderApprovalRequired: false,
+          founderApproved: false,
+          approvedBy: [],
+          activityLog: [...(target.activityLog ?? []), logEntry],
+        };
+      } else {
+        const logEntry = makeLogEntry('status_change', target.status, targetStatus, 'moved via drag and drop');
+        updated = {
+          ...target,
+          status: targetStatus,
+          activityLog: [...(target.activityLog ?? []), logEntry],
+        };
+      }
+
+      if (authUser) {
+        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
+          if (error) console.error('[Pipeline] Sync failed:', error.message);
+        });
+      }
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [makeLogEntry, authUser]);
+
+  // Dragging a card straight out of Brief Approval prompts the manager for an
+  // assignee and the founder-review toggle, then approves and moves it in one step.
+  const approveAndMoveRequest = useCallback((id: string, targetStatus: Status, assigneeId: string, requireFounder: boolean) => {
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target) return prev;
+      const logEntry = makeLogEntry('brief_approved', 'Brief Approval', targetStatus);
+      const updated: ContentRequest = {
+        ...target,
+        managerApproved: true,
+        founderApprovalRequired: requireFounder,
+        founderApproved: !requireFounder,
+        assigneeIds: assigneeId ? [assigneeId] : target.assigneeIds,
+        approvedBy: [],
+        status: targetStatus,
+        activityLog: [...(target.activityLog ?? []), logEntry],
+      };
+      if (authUser) {
+        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
+          if (error) console.error('[Pipeline] Sync failed:', error.message);
+        });
+      }
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [makeLogEntry, authUser]);
+
   const requestChanges = useCallback((id: string, comment: string, referenceLink?: string) => {
     setRequests(prev => {
       const target = prev.find(r => r.id === id);
@@ -772,7 +837,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       activePipelines, dateRange, dateFilterTypes, backups, backupsLoading,
       setCurrentUser, refreshUsers, setActiveView, openModal, closeModal,
       updateRequest, addRequest, approveRequest, markAsPosted,
-      initiateDesign, submitForReview, acceptTask, removeAssignee, assignTask, requestChanges,
+      initiateDesign, submitForReview, acceptTask, removeAssignee, assignTask, dragMoveRequest, approveAndMoveRequest, requestChanges,
       editPostDate, removeCreatorFromApproval, addComment,
       createBackup, restoreAll, restoreByRole, restoreByUser, restoreOne, deleteBackup,
       togglePipeline, setDateRange, toggleDateFilterType, setDateFilterTypes, clearFilters,

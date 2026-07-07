@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { format } from 'date-fns';
 import { Paperclip, PlayCircle, ShieldCheck } from 'lucide-react';
@@ -12,6 +13,7 @@ import { useApp } from '../../context/AppContext';
 
 export default function KanbanCard({ req }: { req: ContentRequest }) {
   const { openModal, users } = useApp();
+  const [isDragging, setIsDragging] = useState(false);
   const alert = isRedAlert(req);
   const pipelineColor = pipelineConfig[req.pipeline]?.dot ?? '#6B7280';
   const assignees = users.filter(u => req.assigneeIds.includes(u.id));
@@ -26,6 +28,16 @@ export default function KanbanCard({ req }: { req: ContentRequest }) {
   };
 
   return (
+    <div
+      draggable
+      onDragStart={e => {
+        e.dataTransfer.setData('text/plain', req.id);
+        e.dataTransfer.effectAllowed = 'move';
+        setIsDragging(true);
+      }}
+      onDragEnd={() => setIsDragging(false)}
+      className={`cursor-grab active:cursor-grabbing transition-opacity ${isDragging ? 'opacity-40' : ''}`}
+    >
     <motion.div
       layout
       initial={{ opacity: 0, y: 10 }}
@@ -115,5 +127,6 @@ export default function KanbanCard({ req }: { req: ContentRequest }) {
         </div>
       </div>
     </motion.div>
+    </div>
   );
 }

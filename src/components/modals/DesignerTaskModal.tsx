@@ -25,7 +25,7 @@ const QUICK_CHIPS = [
 
 type ActivityTab = 'all' | 'comments' | 'history';
 
-export default function DesignerTaskModal({ open, requestId }: { open: boolean; requestId?: string }) {
+export default function DesignerTaskModal({ open, requestId, openReviewForm }: { open: boolean; requestId?: string; openReviewForm?: boolean }) {
   const {
     requests, closeModal, updateRequest, openModal, addComment,
     markAsPosted, submitForReview, acceptTask, removeAssignee, assignTask,
@@ -130,6 +130,10 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
   useEffect(() => {
     if (composerOpen) textareaRef.current?.focus();
   }, [composerOpen]);
+
+  useEffect(() => {
+    if (open && openReviewForm) setReviewFormOpen(true);
+  }, [open, openReviewForm, requestId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
