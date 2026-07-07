@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 import { Bell, Plus, Search } from 'lucide-react';
@@ -19,15 +19,34 @@ export default function TopBar() {
   const { notifications, unreadCount, markAllRead } = useNotifications();
   const [search, setSearch] = useState('');
   const [panelOpen, setPanelOpen] = useState(false);
+  const [panelPos, setPanelPos] = useState<{ top: number; right: number } | null>(null);
+  const bellRef = useRef<HTMLButtonElement>(null);
   const label = VIEW_LABELS[activeView];
 
   const togglePanel = () => {
     setPanelOpen(v => {
       const next = !v;
-      if (next) markAllRead();
+      if (next) {
+        markAllRead();
+        const rect = bellRef.current?.getBoundingClientRect();
+        if (rect) {
+          setPanelPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+        }
+      }
       return next;
     });
   };
+
+  // Keep the panel pinned under the bell if the window is resized while it's open
+  useEffect(() => {
+    if (!panelOpen) return;
+    const reposition = () => {
+      const rect = bellRef.current?.getBoundingClientRect();
+      if (rect) setPanelPos({ top: rect.bottom + 8, right: window.innerWidth - rect.right });
+    };
+    window.addEventListener('resize', reposition);
+    return () => window.removeEventListener('resize', reposition);
+  }, [panelOpen]);
 
   const handleNotificationClick = (requestId: string) => {
     const req = requests.find(r => r.id === requestId);
@@ -80,6 +99,7 @@ export default function TopBar() {
           {/* Bell */}
           <div className="relative">
             <motion.button
+              ref={bellRef}
               whileHover={{ scale: 1.06, y: -1 }}
               whileTap={{ scale: 0.94, y: 0 }}
               onClick={togglePanel}
@@ -103,7 +123,7 @@ export default function TopBar() {
             </motion.button>
 
             <AnimatePresence>
-              {panelOpen && (
+              {panelOpen && panelPos && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setPanelOpen(false)} />
                   <motion.div
@@ -111,7 +131,8 @@ export default function TopBar() {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 8, scale: 0.97 }}
                     transition={{ duration: 0.15 }}
-                    className="absolute right-0 top-full mt-2 w-80 max-h-96 overflow-y-auto bg-white rounded-xl border border-gray-200 shadow-xl z-50"
+                    style={{ position: 'fixed', top: panelPos.top, right: panelPos.right }}
+                    className="w-80 max-w-[calc(100vw-2rem)] max-h-96 overflow-y-auto bg-white rounded-xl border border-gray-200 shadow-xl z-50"
                   >
                     <div className="px-4 py-3 border-b border-gray-100">
                       <h3 className="text-sm font-bold text-gray-900">Notifications</h3>

@@ -20,8 +20,6 @@ export default function DragApproveModal({ open, requestId, targetStatus }: { op
 
   if (!req || !targetStatus) return null;
 
-  const designers = users.filter(u => u.role === 'designer');
-
   const handleConfirm = () => {
     if (!assigneeId) return;
     approveAndMoveRequest(req.id, targetStatus, assigneeId, requireFounder);
@@ -46,7 +44,7 @@ export default function DragApproveModal({ open, requestId, targetStatus }: { op
             }`}
           >
             <option value="">Unassigned</option>
-            {designers.map(u => (
+            {users.map(u => (
               <option key={u.id} value={u.id}>{u.name}</option>
             ))}
           </select>

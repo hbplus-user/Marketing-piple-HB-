@@ -1,5 +1,6 @@
-import { useMemo, useCallback, useState } from 'react';
+import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
+import { playNotificationSound, unlockAudio } from '../utils/notificationSound';
 import type { ContentRequest, ActivityLogType } from '../types';
 
 export interface NotificationItem {
@@ -51,7 +52,11 @@ export function useNotifications() {
 
       for (const entry of (req.activityLog ?? [])) {
         if (entry.userId === currentUser.id) continue;
-        const label = LOG_MESSAGES[entry.type];
+        // Any real stage move (not e.g. an assign/unassign, which logs the same
+        // status_change type with fromStatus === toStatus) gets its own alert.
+        const label = entry.type === 'status_change' && entry.fromStatus !== entry.toStatus
+          ? `moved this to ${entry.toStatus}`
+          : LOG_MESSAGES[entry.type];
         if (!label) continue;
         const actor = users.find(u => u.id === entry.userId);
         out.push({
@@ -89,6 +94,46 @@ export function useNotifications() {
     localStorage.setItem(lastSeenKey(currentUser.id), String(Date.now()));
     setSeenVersion(v => v + 1);
   }, [currentUser.id]);
+
+  // Browsers require an actual user gesture before they'll show the permission
+  // prompt or let audio play — piggyback on the very first click/keypress anywhere.
+  useEffect(() => {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'default') return;
+    const unlock = () => {
+      Notification.requestPermission();
+      unlockAudio();
+      document.removeEventListener('pointerdown', unlock);
+      document.removeEventListener('keydown', unlock);
+    };
+    document.addEventListener('pointerdown', unlock, { once: true });
+    document.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      document.removeEventListener('pointerdown', unlock);
+      document.removeEventListener('keydown', unlock);
+    };
+  }, []);
+
+  // Play a sound + fire a real OS notification for whatever's newly unread —
+  // never for the backlog already sitting there on first load.
+  const knownUnreadIdsRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const currentUnreadIds = new Set(notifications.filter(n => !n.read).map(n => n.id));
+
+    if (knownUnreadIdsRef.current === null) {
+      knownUnreadIdsRef.current = currentUnreadIds;
+      return;
+    }
+
+    const freshOnes = notifications.filter(n => !n.read && !knownUnreadIdsRef.current!.has(n.id));
+    if (freshOnes.length > 0) {
+      playNotificationSound();
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        const latest = freshOnes[0];
+        new Notification('Marketing Pipeline', { body: latest.message });
+      }
+    }
+    knownUnreadIdsRef.current = currentUnreadIds;
+  }, [notifications]);
 
   return { notifications, unreadCount, markAllRead };
 }

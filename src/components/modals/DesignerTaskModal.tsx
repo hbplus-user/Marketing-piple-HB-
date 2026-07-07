@@ -492,7 +492,7 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
                   </div>
                 </div>
               )}
-              {owner && owner.id !== requester?.id && (
+              {owner && (
                 <div>
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Owner</p>
                   <div className="flex items-center gap-2">
@@ -511,7 +511,7 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
                   }`}
                 >
                   <option value="">Unassigned</option>
-                  {users.filter(u => u.role === 'designer').map(u => (
+                  {users.map(u => (
                     <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
                 </select>

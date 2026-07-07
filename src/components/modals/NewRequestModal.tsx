@@ -26,9 +26,27 @@ export default function NewRequestModal({ open }: { open: boolean }) {
   const [daysNeeded, setDaysNeeded] = useState(3);
   const [category, setCategory]     = useState('');
   const [followerIds, setFollowerIds] = useState<string[]>([]);
+  const [assigneeId, setAssigneeId]   = useState('');
   const [linkInput, setLinkInput]   = useState('');
   const [referenceLinks, setReferenceLinks] = useState<string[]>([]);
   const linkInputRef = useRef<HTMLInputElement>(null);
+
+  const defaultAssignee = users.find(u => u.name.toLowerCase().includes('chetna'));
+  const defaultAppliedRef = useRef(false);
+
+  // Default "Assigned to" to Chetna each time the form opens fresh. Users load
+  // asynchronously, so keep watching until `defaultAssignee` actually resolves —
+  // but only apply it once per open, so it never overwrites a manual change.
+  useEffect(() => {
+    if (!open) {
+      defaultAppliedRef.current = false;
+      return;
+    }
+    if (!defaultAppliedRef.current && defaultAssignee) {
+      setAssigneeId(defaultAssignee.id);
+      defaultAppliedRef.current = true;
+    }
+  }, [open, users]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addLink = () => {
     const trimmed = linkInput.trim();
@@ -68,6 +86,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
     setTitle(''); setBrief(''); setPipeline(null); setCategory('');
     setPostDate(''); setInternalDeadlineStr(''); setDaysNeeded(3);
     setFollowerIds([]); setLinkInput(''); setReferenceLinks([]);
+    setAssigneeId('');
   };
 
   const handleSubmit = () => {
@@ -87,7 +106,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
       status: 'Brief Approval',
       requesterId: currentUser.id,
       ownerId: currentUser.id,
-      assigneeIds: [],
+      assigneeIds: assigneeId ? [assigneeId] : [],
       followerIds,
       reviewerIds: [manager.id],
       postDate: postDateObj,
@@ -224,6 +243,21 @@ export default function NewRequestModal({ open }: { open: boolean }) {
             />
           </div>
         )}
+
+        {/* Assigned to */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Assigned to</label>
+          <select
+            value={assigneeId}
+            onChange={e => setAssigneeId(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
+          >
+            <option value="">Unassigned</option>
+            {users.map(u => (
+              <option key={u.id} value={u.id}>{u.name}</option>
+            ))}
+          </select>
+        </div>
 
         {/* Dates */}
         <div className="grid grid-cols-2 gap-4">

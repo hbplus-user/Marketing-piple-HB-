@@ -153,15 +153,22 @@ export default function MyTasksView() {
   const hasFilters = dueDateRange.start !== null || postDateRange.start !== null;
   const clearFilters = () => { setDueDateRange(EMPTY_RANGE); setPostDateRange(EMPTY_RANGE); };
 
-  // ── Me tab ────────────────────────────────────────────────────────────────
+  // ── Me tab — I'm involved in it in any capacity ─────────────────────────────
+  const isMine = (r: ContentRequest) =>
+    r.assigneeIds.includes(currentUser.id) ||
+    (r.followerIds ?? []).includes(currentUser.id) ||
+    r.requesterId === currentUser.id ||
+    r.ownerId === currentUser.id ||
+    r.reviewerIds.includes(currentUser.id);
+
   const myTasks = sortByPriority(
     filteredRequests.filter(r =>
-      r.assigneeIds.includes(currentUser.id) &&
+      isMine(r) &&
       inRange(r.internalDeadline, dueDateRange) &&
       inRange(r.postDate, postDateRange)
     )
   );
-  const totalAssigned = filteredRequests.filter(r => r.assigneeIds.includes(currentUser.id)).length;
+  const totalAssigned = filteredRequests.filter(isMine).length;
   const activeCount   = myTasks.filter(r => r.status !== 'Approved' && r.status !== 'Posted').length;
   const highCount     = myTasks.filter(r => r.priority === 'high').length;
 
