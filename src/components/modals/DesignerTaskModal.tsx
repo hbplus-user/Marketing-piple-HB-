@@ -9,7 +9,7 @@ import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 import { daysToDeadline } from '../../utils/deadlineUtils';
-import { canEdit, canApprove, canWorkOnDesign, isTaskApproved } from '../../utils/permissions';
+import { canEdit, canApprove, canWorkOnDesign, canAssignTask, isTaskApproved } from '../../utils/permissions';
 import { isValidUrl } from '../../utils/validation';
 import type { Status } from '../../types';
 
@@ -28,7 +28,7 @@ type ActivityTab = 'all' | 'comments' | 'history';
 export default function DesignerTaskModal({ open, requestId }: { open: boolean; requestId?: string }) {
   const {
     requests, closeModal, updateRequest, openModal, addComment,
-    markAsPosted, submitForReview, acceptTask, removeAssignee,
+    markAsPosted, submitForReview, acceptTask, removeAssignee, assignTask,
     initiateDesign, currentUser, users,
   } = useApp();
 
@@ -137,6 +137,8 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
 
   if (!req) return null;
 
+  const canShowFeedback = req.status === 'Design Progress' || req.status === 'Approved';
+
   const requester = users.find(u => u.id === req.requesterId);
   const assignees = users.filter(u => req.assigneeIds.includes(u.id));
   const owner     = users.find(u => u.id === req.ownerId);
@@ -167,7 +169,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
   };
 
   return (
-    <Modal open={open} onClose={closeModal} size="lg">
+    <Modal open={open} onClose={closeModal} size={canShowFeedback ? 'full' : 'lg'}>
       <div className="flex flex-col max-h-[84vh] overflow-hidden">
 
         {/* Header */}
@@ -180,8 +182,10 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
           <h2 className="text-base font-bold text-gray-900 m-0">{req.title}</h2>
         </div>
 
+        <div className={`flex-1 flex overflow-hidden ${canShowFeedback ? 'flex-col md:flex-row' : ''}`}>
+
         {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto">
+        <div className={`flex-1 overflow-y-auto ${canShowFeedback ? 'md:border-r border-gray-100' : ''}`}>
 
           {/* Approval Status Banner */}
           {!isTaskApproved(req) && (
@@ -239,7 +243,7 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
             {/* Left col: brief / attachments / links */}
             <div className="md:col-span-2 space-y-4 self-start">
               <div>
-                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Brief</p>
+                <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Description</p>
                 <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{req.brief || '-'}</p>
               </div>
               {(req.category || req.priority) && (
@@ -497,7 +501,25 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
               )}
               <div>
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Assigned to</p>
-                {assignees.length > 0 ? (
+                {canAssignTask(currentUser.role) ? (
+                  <>
+                    <select
+                      value={assignees[0]?.id ?? ''}
+                      onChange={e => assignTask(req.id, e.target.value)}
+                      className={`w-full px-2 py-1.5 text-xs rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d] ${
+                        assignees.length === 0 ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-gray-200 bg-white text-gray-700'
+                      }`}
+                    >
+                      <option value="">Unassigned</option>
+                      {users.filter(u => u.role === 'designer').map(u => (
+                        <option key={u.id} value={u.id}>{u.name}</option>
+                      ))}
+                    </select>
+                    {assignees.length === 0 && (
+                      <p className="text-[10px] text-amber-600 mt-1">Required before moving to the next step</p>
+                    )}
+                  </>
+                ) : assignees.length > 0 ? (
                   <div className="flex flex-col gap-1">
                     {assignees.map(u => (
                       <div key={u.id} className="flex items-center gap-2">
@@ -656,6 +678,74 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
           </div>
         </div>
 
+        {/* Feedback thread — right column, round-by-round comments, so the team
+            can monitor feedback through Design Progress and Approved at a glance */}
+        {canShowFeedback && (
+          <div className="w-full md:w-[340px] flex-shrink-0 overflow-y-auto p-4 bg-gray-50/50">
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Feedback thread</h4>
+            <div className="space-y-4">
+              {req.rounds.map(round => (
+                <div key={round.round}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Round {round.round}</span>
+                    <div className="flex-1 h-px bg-gray-200" />
+                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                      round.status === 'approved' ? 'bg-emerald-100 text-emerald-600' :
+                      round.status === 'changes-requested' ? 'bg-amber-100 text-amber-600' :
+                      'bg-gray-100 text-gray-500'
+                    }`}>
+                      {round.status.replace('-', ' ')}
+                    </span>
+                  </div>
+                  {(round.submissionLinks.length > 0 || round.submissionNote) && (
+                    <div className="mb-2 px-3 py-2 bg-[#f5ece7] rounded-lg border border-[#f0ddd5] space-y-1.5">
+                      {round.submissionNote && (
+                        <p className="text-xs text-[#8a4f39] whitespace-pre-line">{round.submissionNote}</p>
+                      )}
+                      {round.submissionLinks.map((url, i) => (
+                        <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 text-[11px] text-[#a9674d] hover:text-[#8a4f39] truncate">
+                          <Link size={10} className="flex-shrink-0" />
+                          <span className="truncate">{url}</span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  {round.comments.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic px-1">No comments yet.</p>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {round.comments.map((c, i) => {
+                        const user = users.find(u => u.id === c.userId);
+                        return (
+                          <div key={i} className="flex items-start gap-2">
+                            {user && <Avatar initials={user.initials} color={user.avatarColor} size="sm" title={user.name} />}
+                            <div className="flex-1 bg-white rounded-lg px-3 py-2 border border-gray-100">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <span className="text-[11px] font-semibold text-gray-700">{user?.name}</span>
+                                <span className="text-[10px] text-gray-400">{format(c.createdAt, 'MMM d, h:mm a')}</span>
+                              </div>
+                              <p className="text-xs text-gray-600">{c.text}</p>
+                              {c.referenceLink && (
+                                <a href={c.referenceLink} target="_blank" rel="noopener noreferrer"
+                                  className="mt-1 flex items-center gap-1 text-[11px] text-[#a9674d] hover:text-[#8a4f39] truncate">
+                                  <Link size={10} />{c.referenceLink}
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        </div>
+
         {/* Footer */}
         <div className="px-6 py-4 border-t border-gray-100 flex items-start justify-end flex-shrink-0 bg-gray-50/60">
           <div className="flex flex-col items-end gap-3">
@@ -754,15 +844,23 @@ export default function DesignerTaskModal({ open, requestId }: { open: boolean; 
                   const canSubmit  = isAssignee || canWorkOnDesign(currentUser.role, req, currentUser.id);
                   const canPost    = isOwner || isManager || isFounder;
 
-                  /* Design — show Initiate button */
+                  /* Design — show Initiate button (blocked until someone is assigned) */
                   if (req.status === 'Design' && canSubmit) {
+                    const noAssignee = assignees.length === 0;
                     return (
-                      <button
-                        onClick={() => { closeModal(); initiateDesign(req.id); }}
-                        className="px-4 py-2 text-sm font-semibold bg-[#7c3aed] hover:bg-[#6d28d9] text-white rounded-lg transition-colors"
-                      >
-                        Initiate Design
-                      </button>
+                      <div className="flex flex-col items-end gap-1">
+                        <button
+                          onClick={() => { if (noAssignee) return; closeModal(); initiateDesign(req.id); }}
+                          disabled={noAssignee}
+                          title={noAssignee ? 'Assign someone before starting design work' : undefined}
+                          className="px-4 py-2 text-sm font-semibold bg-[#7c3aed] hover:bg-[#6d28d9] disabled:bg-gray-300 disabled:cursor-not-allowed disabled:hover:bg-gray-300 text-white rounded-lg transition-colors"
+                        >
+                          Initiate Design
+                        </button>
+                        {noAssignee && (
+                          <span className="text-[11px] text-amber-600">Assign someone first</span>
+                        )}
+                      </div>
                     );
                   }
 

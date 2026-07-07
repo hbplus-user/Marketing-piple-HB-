@@ -102,6 +102,7 @@ interface AppState {
   submitForReview: (id: string, links: string[], note: string) => void;
   acceptTask: (id: string, startDate?: Date) => void;
   removeAssignee: (id: string, userId: string) => void;
+  assignTask: (id: string, userId: string) => void;
   requestChanges: (id: string, comment: string, referenceLink?: string) => void;
   editPostDate: (id: string, newDate: Date, reason: string) => void;
   removeCreatorFromApproval: (id: string) => void;
@@ -557,6 +558,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [makeLogEntry, authUser]);
 
+  const assignTask = useCallback((id: string, userId: string) => {
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target) return prev;
+      const newAssigneeIds = userId ? [userId] : [];
+      // Drop acceptance records for anyone no longer assigned, renumber the rest
+      const filteredAcceptance = (target.assigneeAcceptance ?? [])
+        .filter(a => newAssigneeIds.includes(a.userId))
+        .map((a, i) => ({ ...a, sequence: i + 1 }));
+      const logEntry = makeLogEntry('status_change', target.status, target.status, userId ? 'assigned task' : 'unassigned task');
+      const updated: ContentRequest = {
+        ...target,
+        assigneeIds: newAssigneeIds,
+        assigneeAcceptance: filteredAcceptance,
+        activityLog: [...(target.activityLog ?? []), logEntry],
+      };
+      if (authUser) {
+        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
+          if (error) console.error('[Pipeline] Sync failed:', error.message);
+        });
+      }
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [makeLogEntry, authUser]);
+
   const requestChanges = useCallback((id: string, comment: string, referenceLink?: string) => {
     setRequests(prev => {
       const target = prev.find(r => r.id === id);
@@ -746,7 +772,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       activePipelines, dateRange, dateFilterTypes, backups, backupsLoading,
       setCurrentUser, refreshUsers, setActiveView, openModal, closeModal,
       updateRequest, addRequest, approveRequest, markAsPosted,
-      initiateDesign, submitForReview, acceptTask, removeAssignee, requestChanges,
+      initiateDesign, submitForReview, acceptTask, removeAssignee, assignTask, requestChanges,
       editPostDate, removeCreatorFromApproval, addComment,
       createBackup, restoreAll, restoreByRole, restoreByUser, restoreOne, deleteBackup,
       togglePipeline, setDateRange, toggleDateFilterType, setDateFilterTypes, clearFilters,

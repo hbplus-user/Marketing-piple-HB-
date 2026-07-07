@@ -65,6 +65,13 @@ export default function KanbanCard({ req }: { req: ContentRequest }) {
           {req.title}
         </p>
 
+        {/* Brief preview */}
+        {req.brief && (
+          <p className="text-[11px] text-gray-500 leading-snug line-clamp-2">
+            {req.brief}
+          </p>
+        )}
+
         {/* Red alert */}
         {alert && <RedAlertChip req={req} />}
 

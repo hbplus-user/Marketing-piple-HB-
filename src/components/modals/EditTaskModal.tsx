@@ -102,7 +102,7 @@ export default function EditTaskModal({ open, requestId }: { open: boolean; requ
 
         {/* Brief */}
         <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Brief description</label>
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Description</label>
           <textarea
             value={brief}
             onChange={e => setBrief(e.target.value)}

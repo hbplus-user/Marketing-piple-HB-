@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { format } from 'date-fns';
-import { Paperclip, Link, ExternalLink, UserMinus, ShieldCheck, Calendar } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Paperclip, Link, ExternalLink, UserMinus, ShieldCheck, Calendar, Send, ChevronRight } from 'lucide-react';
 import Modal from '../shared/Modal';
 import Badge from '../shared/Badge';
 import RoundBadge from '../shared/RoundBadge';
@@ -9,11 +10,30 @@ import { useApp } from '../../context/AppContext';
 import { canApprove, canRequestChanges, canRemoveCreator, canEditPostDate } from '../../utils/permissions';
 import { isValidUrl } from '../../utils/validation';
 
+const QUICK_CHIPS = [
+  { emoji: '🎉', label: 'Looks good!' },
+  { emoji: '👋', label: 'Need help?' },
+  { emoji: '🚫', label: 'This is blocked' },
+  { emoji: '🔍', label: 'Can you clarify?' },
+  { emoji: '✅', label: 'This is on track' },
+];
+
+type ActivityTab = 'all' | 'comments' | 'history';
+
 export default function ReviewFeedbackModal({ open, requestId }: { open: boolean; requestId?: string }) {
-  const { requests, closeModal, approveRequest, requestChanges, removeCreatorFromApproval, currentUser, openModal, users } = useApp();
+  const { requests, closeModal, approveRequest, requestChanges, removeCreatorFromApproval, addComment, currentUser, openModal, users } = useApp();
   const [comment, setComment]           = useState('');
   const [refLink, setRefLink]           = useState('');
   const [requireFounder, setRequireFounder] = useState(false);
+
+  // General activity feed — separate from the round-scoped `comment` above,
+  // which is tied specifically to the Request Changes / Approve actions below.
+  const [activityTab, setActivityTab]             = useState<ActivityTab>('all');
+  const [activityComposerOpen, setActivityComposerOpen] = useState(false);
+  const [activityText, setActivityText]           = useState('');
+  const [activityRefLink, setActivityRefLink]     = useState('');
+  const [showActivityRefLink, setShowActivityRefLink] = useState(false);
+  const activityTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const req = requests.find(r => r.id === requestId);
 
@@ -22,6 +42,19 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
   useEffect(() => {
     setRequireFounder(req?.founderApprovalRequired === true);
   }, [requestId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!open) {
+      setActivityComposerOpen(false);
+      setActivityText('');
+      setActivityRefLink('');
+      setShowActivityRefLink(false);
+    }
+  }, [open, requestId]);
+
+  useEffect(() => {
+    if (activityComposerOpen) activityTextareaRef.current?.focus();
+  }, [activityComposerOpen]);
 
   if (!req) return null;
 
@@ -52,10 +85,24 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
     status_change:        'changed status',
   };
   const historyItems = [
-    { date: req.createdAt, userId: req.requesterId as string | undefined, text: 'created this request' },
-    ...req.postDateHistory.map(h => ({ date: h.date, userId: h.changedBy as string | undefined, text: `changed the post date — ${h.reason}` })),
-    ...(req.activityLog ?? []).map(e => ({ date: e.timestamp, userId: e.userId as string | undefined, text: historyLabels[e.type] ?? e.type })),
+    { kind: 'history' as const, date: req.createdAt, userId: req.requesterId as string | undefined, text: 'created this request' },
+    ...req.postDateHistory.map(h => ({ kind: 'history' as const, date: h.date, userId: h.changedBy as string | undefined, text: `changed the post date — ${h.reason}` })),
+    ...(req.activityLog ?? []).map(e => ({ kind: 'history' as const, date: e.timestamp, userId: e.userId as string | undefined, text: historyLabels[e.type] ?? e.type })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime());
+  const commentItems = req.rounds.flatMap(round =>
+    round.comments.map(c => ({
+      kind: 'comment' as const,
+      date: c.createdAt,
+      userId: c.userId as string | undefined,
+      text: c.text,
+      referenceLink: c.referenceLink,
+      round: round.round,
+    }))
+  ).sort((a, b) => a.date.getTime() - b.date.getTime());
+  const activityFeedItems =
+    activityTab === 'comments' ? commentItems :
+    activityTab === 'history'  ? historyItems :
+    [...commentItems, ...historyItems].sort((a, b) => a.date.getTime() - b.date.getTime());
   const inApprovedStage = req.status === 'Approved';
   const canRequestHere  = inApprovedStage ? (isOwner || isManager) : userCanRequest;
 
@@ -71,8 +118,14 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
   const refLinkInvalid = refLinkTrimmed.length > 0 && !isValidUrl(refLinkTrimmed);
 
   const handleApprove = () => {
+    if (refLinkInvalid) return;
     const id = req.id;
     const rf = isManager ? requireFounder : false;
+    const c  = comment.trim();
+    const rl = refLinkTrimmed || undefined;
+    if (c) addComment(id, c, rl);
+    setComment('');
+    setRefLink('');
     setRequireFounder(false);
     closeModal();
     approveRequest(id, rf);
@@ -87,6 +140,17 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
     setRefLink('');
     closeModal();
     requestChanges(id, c, rl);
+  };
+
+  const openActivityComposer = (prefill = '') => {
+    setActivityComposerOpen(true);
+    if (prefill) setActivityText(prefill);
+  };
+
+  const handleActivitySend = () => {
+    if (!activityText.trim()) return;
+    addComment(req.id, activityText, activityRefLink.trim() || undefined);
+    setActivityText(''); setActivityRefLink(''); setShowActivityRefLink(false); setActivityComposerOpen(false);
   };
 
   return (
@@ -276,29 +340,149 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
               </div>
             )}
 
-            {/* Full history — every stage change from creation onward */}
-            <div>
-              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">History</p>
-              <div className="space-y-2.5">
-                {historyItems.map((item, i) => {
-                  const user = users.find(u => u.id === item.userId);
-                  return (
-                    <div key={i} className="flex items-center gap-2">
-                      {user
-                        ? <Avatar initials={user.initials} color={user.avatarColor} size="sm" />
-                        : <div className="w-6 h-6 rounded-full bg-gray-200 flex-shrink-0" />
-                      }
-                      <p className="text-[12px] text-gray-500">
-                        <span className="font-semibold text-gray-700">{user?.name ?? 'System'}</span>{' '}
-                        {item.text}
-                        <span className="ml-2 text-[11px] text-gray-400">
-                          · {format(item.date, 'MMM d, yyyy')} at {format(item.date, 'h:mm a')}
-                        </span>
-                      </p>
-                    </div>
-                  );
-                })}
+            {/* Activity — same tabbed feed as the Design/Progress/Approved task view */}
+            <div className="pt-5 border-t border-gray-100">
+              <div className="flex items-center gap-4 mb-4">
+                <h3 className="text-sm font-bold text-gray-900">Activity</h3>
+                <div className="flex items-center gap-0.5 border border-gray-200 rounded-lg p-0.5">
+                  {(['all', 'comments', 'history'] as ActivityTab[]).map(tab => (
+                    <button key={tab} onClick={() => setActivityTab(tab)}
+                      className={`px-3 py-1 rounded-md text-xs font-medium capitalize transition-all ${
+                        activityTab === tab ? 'bg-white shadow-sm text-[#8a4f39] border border-gray-200' : 'text-gray-500 hover:text-gray-700'
+                      }`}>
+                      {tab}
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              <div className="flex items-start gap-3 mb-5">
+                <Avatar initials={currentUser.initials} color={currentUser.avatarColor} size="sm" />
+                <div className="flex-1">
+                  <AnimatePresence mode="wait">
+                    {!activityComposerOpen ? (
+                      <motion.div key="collapsed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.12 }}>
+                        <div
+                          onClick={() => openActivityComposer()}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-400 cursor-text hover:border-gray-300 hover:bg-gray-50/60 transition-colors"
+                        >
+                          Add a comment...
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                          {QUICK_CHIPS.map(chip => (
+                            <button
+                              key={chip.label}
+                              onClick={() => openActivityComposer(chip.label)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-full border border-gray-200 bg-white hover:bg-gray-50 hover:border-gray-300 text-[11px] text-gray-600 font-medium transition-colors"
+                            >
+                              <span>{chip.emoji}</span>
+                              {chip.label}
+                            </button>
+                          ))}
+                          <button className="p-1 rounded-full border border-gray-200 hover:bg-gray-50 text-gray-400 transition-colors">
+                            <ChevronRight size={12} />
+                          </button>
+                        </div>
+                      </motion.div>
+                    ) : (
+                      <motion.div key="expanded" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
+                        <div className="border border-gray-200 rounded-xl focus-within:ring-2 focus-within:ring-[#a9674d]/20 focus-within:border-[#a9674d] overflow-hidden transition-all">
+                          {showActivityRefLink && (
+                            <div className="relative border-b border-gray-100">
+                              <Link size={11} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                              <input type="url" value={activityRefLink} onChange={e => setActivityRefLink(e.target.value)}
+                                placeholder="Paste reference URL..."
+                                className="w-full pl-8 pr-3 py-2 text-xs bg-gray-50 focus:outline-none placeholder:text-gray-400" />
+                            </div>
+                          )}
+                          <textarea
+                            ref={activityTextareaRef}
+                            value={activityText}
+                            onChange={e => setActivityText(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleActivitySend(); if (e.key === 'Escape') { setActivityComposerOpen(false); setActivityText(''); } }}
+                            placeholder="Add a comment... (Cmd+Enter to send, Esc to cancel)"
+                            rows={3}
+                            className="w-full px-3 pt-3 pb-1 text-sm resize-none focus:outline-none placeholder:text-gray-400"
+                          />
+                          <div className="flex items-center justify-between px-2 pb-2">
+                            <button onClick={() => setShowActivityRefLink(v => !v)}
+                              title={showActivityRefLink ? 'Remove link' : 'Add reference link'}
+                              className={`p-1.5 rounded-lg transition-colors ${showActivityRefLink ? 'bg-[#f0ddd5] text-[#a9674d]' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}>
+                              <Link size={13} />
+                            </button>
+                            <div className="flex items-center gap-2">
+                              <button onClick={() => { setActivityComposerOpen(false); setActivityText(''); }}
+                                className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors">
+                                Cancel
+                              </button>
+                              <button onClick={handleActivitySend} disabled={!activityText.trim()}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#a9674d] hover:bg-[#8a4f39] disabled:opacity-40 text-white text-xs font-medium transition-colors">
+                                <Send size={11} />
+                                Save
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+
+              {activityFeedItems.length === 0 ? (
+                <p className="text-xs text-gray-400 italic pl-9">No activity yet.</p>
+              ) : (
+                <div className="space-y-4">
+                  {activityFeedItems.map((item, i) => {
+                    const user = users.find(u => u.id === item.userId);
+                    if (item.kind === 'comment') {
+                      const isMe = item.userId === currentUser.id;
+                      return (
+                        <div key={i} className="flex items-start gap-3">
+                          {user && <Avatar initials={user.initials} color={user.avatarColor} size="sm" title={user.name} />}
+                          <div className="flex-1">
+                            <div className="flex items-baseline gap-2 mb-1 flex-wrap">
+                              <span className="text-[12px] font-semibold text-gray-800">{user?.name ?? 'Unknown'}</span>
+                              {!isMe && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                                  Round {item.round}
+                                </span>
+                              )}
+                              <span className="text-[11px] text-gray-400 ml-auto">
+                                {format(item.date, 'MMM d, yyyy')} at {format(item.date, 'h:mm a')}
+                              </span>
+                            </div>
+                            <div className={`rounded-xl px-3 py-2 text-sm text-gray-700 leading-relaxed ${isMe ? 'bg-[#f5ece7]' : 'bg-gray-50'}`}>
+                              {item.text}
+                              {item.referenceLink && (
+                                <a href={item.referenceLink} target="_blank" rel="noopener noreferrer"
+                                  className="mt-1 flex items-center gap-1 text-[11px] text-[#a9674d] hover:underline truncate">
+                                  <Link size={10} />{item.referenceLink}
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={i} className="flex items-center gap-2">
+                        {user
+                          ? <Avatar initials={user.initials} color={user.avatarColor} size="sm" />
+                          : <div className="w-6 h-6 rounded-full bg-gray-200 flex-shrink-0" />
+                        }
+                        <p className="text-[12px] text-gray-500">
+                          <span className="font-semibold text-gray-700">{user?.name ?? 'System'}</span>{' '}
+                          {item.text}
+                          <span className="ml-2 text-[11px] text-gray-400">
+                            · {format(item.date, 'MMM d, yyyy')} at {format(item.date, 'h:mm a')}
+                          </span>
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -511,7 +695,7 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
               {req.status === 'Design Review' && userCanApprove && (
                 <button
                   onClick={handleApprove}
-                  disabled={alreadyApproved}
+                  disabled={alreadyApproved || refLinkInvalid}
                   title={alreadyApproved ? "You've already approved — waiting on a manager to finalize" : undefined}
                   className={`flex-1 py-2 text-xs font-medium text-white rounded-lg transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed disabled:hover:bg-gray-300 ${
                     requireFounder
@@ -527,7 +711,8 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
               {founderCanFinalize && (
                 <button
                   onClick={handleApprove}
-                  className="flex-1 py-2 text-xs font-medium text-white rounded-lg bg-emerald-600 hover:bg-emerald-700 transition-colors"
+                  disabled={refLinkInvalid}
+                  className="flex-1 py-2 text-xs font-medium text-white rounded-lg bg-emerald-600 hover:bg-emerald-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Final Approve
                 </button>

@@ -94,30 +94,33 @@ function TaskRow({ req, isLast, showAssignees }: { req: ContentRequest; isLast: 
       />
       <div className="flex-1 min-w-0">
         <p className="text-[13px] font-semibold text-gray-800 truncate leading-snug">{req.title}</p>
-        <span className="text-[10px] font-mono text-gray-400">{req.id}</span>
-      </div>
-
-      {showAssignees && (
-        <div className="flex items-center gap-1 w-24 flex-shrink-0">
-          {assignees.length === 0 ? (
-            <span className="text-[10px] text-gray-300 italic">Unassigned</span>
-          ) : (
-            <div className="flex items-center -space-x-1">
-              {assignees.slice(0, 3).map(u => (
-                <div key={u.id} className="ring-2 ring-white rounded-full" title={u.name}>
-                  <Avatar initials={u.initials} color={u.avatarColor} size="sm" />
-                </div>
-              ))}
-              {assignees.length > 3 && (
-                <span className="text-[10px] text-gray-400 pl-2">+{assignees.length - 3}</span>
-              )}
-            </div>
+        <div className="flex items-center gap-2 mt-0.5">
+          <span className="text-[10px] font-mono text-gray-400">{req.id}</span>
+          {showAssignees && (
+            assignees.length === 0 ? (
+              <span className="text-[10px] text-gray-300 italic">Unassigned</span>
+            ) : (
+              <div className="flex items-center -space-x-1">
+                {assignees.slice(0, 3).map(u => (
+                  <div key={u.id} className="ring-2 ring-white rounded-full" title={u.name}>
+                    <Avatar initials={u.initials} color={u.avatarColor} size="sm" />
+                  </div>
+                ))}
+                {assignees.length > 3 && (
+                  <span className="text-[10px] text-gray-400 pl-2">+{assignees.length - 3}</span>
+                )}
+              </div>
+            )
           )}
         </div>
-      )}
+      </div>
 
-      <Badge pipeline={req.pipeline} />
-      <StatusChip status={req.status} />
+      <div className="w-36 flex-shrink-0">
+        <Badge pipeline={req.pipeline} />
+      </div>
+      <div className="w-32 flex-shrink-0">
+        <StatusChip status={req.status} />
+      </div>
       <div className="flex flex-col items-end gap-0.5 flex-shrink-0 w-20">
         <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
           <Clock size={8} className="text-amber-500" />
@@ -128,10 +131,12 @@ function TaskRow({ req, isLast, showAssignees }: { req: ContentRequest; isLast: 
           {format(req.postDate, 'MMM d')}
         </span>
       </div>
-      <PriorityPicker
-        priority={req.priority}
-        onChange={p => updateRequest(req.id, { priority: p })}
-      />
+      <div className="w-24 flex-shrink-0 flex justify-end">
+        <PriorityPicker
+          priority={req.priority}
+          onChange={p => updateRequest(req.id, { priority: p })}
+        />
+      </div>
     </div>
   );
 }
@@ -299,15 +304,12 @@ export default function MyTasksView() {
           <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-100 bg-gray-50/60">
             <span className="w-2 flex-shrink-0" />
             <span className="flex-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">Task</span>
-            {tab === 'team' && (
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-24">Assigned to</span>
-            )}
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-20">Pipeline</span>
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-24">Status</span>
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-20 text-right">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-36 flex-shrink-0">Category</span>
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-32 flex-shrink-0">Status</span>
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-20 flex-shrink-0 text-right">
               Due · Post
             </span>
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-24 text-right">Priority</span>
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider w-24 flex-shrink-0 text-right">Priority</span>
           </div>
 
           {tasks.map((req, i) => (
