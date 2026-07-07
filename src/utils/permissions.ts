@@ -63,11 +63,6 @@ export function canEditReviewers(role: Role): boolean {
   return role === 'manager';
 }
 
-/** Only Manager can directly assign who's doing the design work. */
-export function canAssignTask(role: Role): boolean {
-  return role === 'manager';
-}
-
 /** At Design/Design Progress, any Designer can self-claim the work; owner/manager can also act. */
 export function canWorkOnDesign(role: Role, req: ContentRequest, userId: string): boolean {
   return role === 'designer' || role === 'manager' || req.ownerId === userId;

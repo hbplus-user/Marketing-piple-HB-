@@ -90,14 +90,16 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
     ...(req.activityLog ?? []).map(e => ({ kind: 'history' as const, date: e.timestamp, userId: e.userId as string | undefined, text: historyLabels[e.type] ?? e.type })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime());
   const commentItems = req.rounds.flatMap(round =>
-    round.comments.map(c => ({
-      kind: 'comment' as const,
-      date: c.createdAt,
-      userId: c.userId as string | undefined,
-      text: c.text,
-      referenceLink: c.referenceLink,
-      round: round.round,
-    }))
+    round.comments
+      .filter(c => c.kind !== 'feedback')
+      .map(c => ({
+        kind: 'comment' as const,
+        date: c.createdAt,
+        userId: c.userId as string | undefined,
+        text: c.text,
+        referenceLink: c.referenceLink,
+        round: round.round,
+      }))
   ).sort((a, b) => a.date.getTime() - b.date.getTime());
   const activityFeedItems =
     activityTab === 'comments' ? commentItems :
@@ -494,7 +496,9 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-            {req.rounds.map(round => (
+            {req.rounds.map(round => {
+              const feedbackComments = round.comments.filter(c => c.kind === 'feedback');
+              return (
               <div key={round.round}>
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Round {round.round}</span>
@@ -526,11 +530,11 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                     ))}
                   </div>
                 )}
-                {round.comments.length === 0 ? (
+                {feedbackComments.length === 0 ? (
                   <p className="text-xs text-gray-400 italic px-1">No comments yet.</p>
                 ) : (
                   <div className="space-y-3">
-                    {round.comments.map((c, i) => {
+                    {feedbackComments.map((c, i) => {
                       const user = users.find(u => u.id === c.userId);
                       return (
                         <div key={i} className="flex items-start gap-2.5">
@@ -559,7 +563,8 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Comment input + actions */}

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
-import { Paperclip, Calendar, Link, Send, ChevronRight, Plus, X, CheckCircle, Clock, UserMinus, Pencil } from 'lucide-react';
+import { Paperclip, Calendar, Link, Send, ChevronRight, Plus, X, Pencil } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Modal from '../shared/Modal';
 import Badge from '../shared/Badge';
@@ -9,7 +9,7 @@ import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 import { daysToDeadline } from '../../utils/deadlineUtils';
-import { canEdit, canApprove, canWorkOnDesign, canAssignTask, isTaskApproved } from '../../utils/permissions';
+import { canEdit, canApprove, canWorkOnDesign, isTaskApproved } from '../../utils/permissions';
 import { isValidUrl } from '../../utils/validation';
 import type { Status } from '../../types';
 
@@ -28,7 +28,7 @@ type ActivityTab = 'all' | 'comments' | 'history';
 export default function DesignerTaskModal({ open, requestId, openReviewForm }: { open: boolean; requestId?: string; openReviewForm?: boolean }) {
   const {
     requests, closeModal, updateRequest, openModal, addComment,
-    markAsPosted, submitForReview, acceptTask, removeAssignee, assignTask,
+    markAsPosted, submitForReview, assignTask,
     initiateDesign, currentUser, users,
   } = useApp();
 
@@ -46,9 +46,6 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
   const [reviewLinks, setReviewLinks]         = useState<string[]>([]);
   const [reviewNote, setReviewNote]           = useState('');
 
-  // Per-assignee accept date (keyed by userId)
-  const [acceptDates, setAcceptDates] = useState<Record<string, string>>({});
-
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef   = useRef<HTMLDivElement>(null);
 
@@ -57,15 +54,17 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
   const commentItems = useMemo(() => {
     if (!req) return [];
     return req.rounds.flatMap(round =>
-      round.comments.map(c => ({
-        kind: 'comment' as const,
-        date: c.createdAt,
-        userId: c.userId,
-        text: c.text,
-        referenceLink: c.referenceLink,
-        round: round.round,
-        roundStatus: round.status,
-      }))
+      round.comments
+        .filter(c => c.kind !== 'feedback')
+        .map(c => ({
+          kind: 'comment' as const,
+          date: c.createdAt,
+          userId: c.userId,
+          text: c.text,
+          referenceLink: c.referenceLink,
+          round: round.round,
+          roundStatus: round.status,
+        }))
     ).sort((a, b) => a.date.getTime() - b.date.getTime());
   }, [req]);
 
@@ -123,7 +122,6 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
       setReviewLinks([]);
       setReviewLinkInput('');
       setReviewNote('');
-      setAcceptDates({});
     }
   }, [open, requestId]);
 
@@ -209,13 +207,13 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
 
           {/* Changes Requested — surfaces the latest feedback right at the top so the
               designer doesn't have to scroll the activity feed to find it */}
-          {req.status === 'Design Progress' && req.currentRound > 0 && (currentRoundData?.comments.length ?? 0) > 0 && (
+          {req.status === 'Design Progress' && req.currentRound > 0 && (currentRoundData?.comments.filter(c => c.kind === 'feedback').length ?? 0) > 0 && (
             <div className="mx-6 mt-4 p-4 rounded-xl border flex items-start gap-3 bg-amber-50 border-amber-200">
               <span className="text-lg">✏️</span>
               <div className="flex-1 min-w-0">
                 <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wider">Changes Requested</h4>
                 <div className="mt-1.5 space-y-1.5">
-                  {currentRoundData!.comments.map((c, i) => {
+                  {currentRoundData!.comments.filter(c => c.kind === 'feedback').map((c, i) => {
                     const commenter = users.find(u => u.id === c.userId);
                     return (
                       <div key={i}>
@@ -505,134 +503,22 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
               )}
               <div>
                 <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Assigned to</p>
-                {canAssignTask(currentUser.role) ? (
-                  <>
-                    <select
-                      value={assignees[0]?.id ?? ''}
-                      onChange={e => assignTask(req.id, e.target.value)}
-                      className={`w-full px-2 py-1.5 text-xs rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d] ${
-                        assignees.length === 0 ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-gray-200 bg-white text-gray-700'
-                      }`}
-                    >
-                      <option value="">Unassigned</option>
-                      {users.filter(u => u.role === 'designer').map(u => (
-                        <option key={u.id} value={u.id}>{u.name}</option>
-                      ))}
-                    </select>
-                    {assignees.length === 0 && (
-                      <p className="text-[10px] text-amber-600 mt-1">Required before moving to the next step</p>
-                    )}
-                  </>
-                ) : assignees.length > 0 ? (
-                  <div className="flex flex-col gap-1">
-                    {assignees.map(u => (
-                      <div key={u.id} className="flex items-center gap-2">
-                        <Avatar initials={u.initials} color={u.avatarColor} size="sm" />
-                        <span className="text-xs font-medium text-gray-700">{u.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <span className="text-xs text-gray-400 italic">Unassigned</span>
+                <select
+                  value={assignees[0]?.id ?? ''}
+                  onChange={e => assignTask(req.id, e.target.value)}
+                  className={`w-full px-2 py-1.5 text-xs rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d] ${
+                    assignees.length === 0 ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-gray-200 bg-white text-gray-700'
+                  }`}
+                >
+                  <option value="">Unassigned</option>
+                  {users.filter(u => u.role === 'designer').map(u => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
+                {assignees.length === 0 && (
+                  <p className="text-[10px] text-amber-600 mt-1">Required before moving to the next step</p>
                 )}
               </div>
-
-              {/* Self-claim — any Designer can pick up unclaimed Design/Design Progress work */}
-              {isTaskApproved(req) &&
-                (req.status === 'Design' || req.status === 'Design Progress') &&
-                currentUser.role === 'designer' &&
-                !assignees.some(u => u.id === currentUser.id) && (
-                <div>
-                  <button
-                    onClick={() => acceptTask(req.id)}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold transition-colors"
-                  >
-                    Pick up this task
-                  </button>
-                </div>
-              )}
-
-              {/* Assignee acceptance — visible in Design Progress */}
-              {isTaskApproved(req) && req.status === 'Design Progress' && assignees.length > 0 && (
-                <div>
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Working on</p>
-                  <div className="flex flex-col gap-2">
-                    {[...assignees].sort((a, b) => {
-                      const aAcc = (req.assigneeAcceptance ?? []).find(ac => ac.userId === a.id);
-                      const bAcc = (req.assigneeAcceptance ?? []).find(ac => ac.userId === b.id);
-                      if (aAcc && bAcc) return aAcc.sequence - bAcc.sequence;
-                      if (aAcc) return -1;
-                      if (bAcc) return 1;
-                      return 0;
-                    }).map(u => {
-                      const acceptance = (req.assigneeAcceptance ?? []).find(a => a.userId === u.id);
-                      const isMe  = u.id === currentUser.id;
-                      const isMgr = currentUser.role === 'manager';
-                      const dateVal = acceptDates[u.id] ?? '';
-                      return (
-                        <div key={u.id} className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2">
-                            {acceptance ? (
-                              <span className="w-4 h-4 rounded-full bg-emerald-100 flex items-center justify-center text-[9px] font-bold text-emerald-600 flex-shrink-0">
-                                {acceptance.sequence}
-                              </span>
-                            ) : (
-                              <span className="w-4 h-4 rounded-full bg-gray-100 flex-shrink-0" />
-                            )}
-                            <Avatar initials={u.initials} color={u.avatarColor} size="sm" title={u.name} />
-                            <span className="text-xs font-medium text-gray-700 flex-1 truncate">{u.name}</span>
-                            {acceptance ? (
-                              <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-emerald-50 text-[10px] font-semibold text-emerald-600 border border-emerald-100 flex-shrink-0">
-                                <CheckCircle size={9} /> In Progress
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-gray-400 flex-shrink-0">Pending</span>
-                            )}
-                            {isMgr && (
-                              <button
-                                onClick={() => removeAssignee(req.id, u.id)}
-                                title="Remove assignee"
-                                className="text-gray-300 hover:text-red-500 transition-colors flex-shrink-0"
-                              >
-                                <UserMinus size={12} />
-                              </button>
-                            )}
-                          </div>
-                          {acceptance?.startDate && (
-                            <p className="text-[10px] text-amber-600 pl-6 flex items-center gap-1">
-                              <Clock size={9} /> Starts {format(acceptance.startDate, 'MMM d')}
-                            </p>
-                          )}
-                          {!acceptance && isMe && (
-                            <div className="pl-6 flex items-center gap-1.5 flex-wrap">
-                              <button
-                                onClick={() => acceptTask(req.id)}
-                                className="px-2 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-semibold transition-colors"
-                              >
-                                Accept now
-                              </button>
-                              <input
-                                type="date"
-                                value={dateVal}
-                                onChange={e => setAcceptDates(prev => ({ ...prev, [u.id]: e.target.value }))}
-                                className="px-1.5 py-0.5 text-[10px] border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#a9674d]/30"
-                              />
-                              {dateVal && (
-                                <button
-                                  onClick={() => { acceptTask(req.id, new Date(dateVal)); setAcceptDates(prev => ({ ...prev, [u.id]: '' })); }}
-                                  className="px-2 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-semibold transition-colors"
-                                >
-                                  Start on date
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
 
               {reviewers.length > 0 && (
                 <div>
@@ -688,7 +574,9 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
           <div className="w-full md:w-[340px] flex-shrink-0 overflow-y-auto p-4 bg-gray-50/50">
             <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Feedback thread</h4>
             <div className="space-y-4">
-              {req.rounds.map(round => (
+              {req.rounds.map(round => {
+                const feedbackComments = round.comments.filter(c => c.kind === 'feedback');
+                return (
                 <div key={round.round}>
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Round {round.round}</span>
@@ -715,11 +603,11 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
                       ))}
                     </div>
                   )}
-                  {round.comments.length === 0 ? (
+                  {feedbackComments.length === 0 ? (
                     <p className="text-xs text-gray-400 italic px-1">No comments yet.</p>
                   ) : (
                     <div className="space-y-2.5">
-                      {round.comments.map((c, i) => {
+                      {feedbackComments.map((c, i) => {
                         const user = users.find(u => u.id === c.userId);
                         return (
                           <div key={i} className="flex items-start gap-2">
@@ -743,7 +631,8 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

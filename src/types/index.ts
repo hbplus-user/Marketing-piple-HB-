@@ -43,6 +43,7 @@ export interface ReviewRound {
     text: string;
     createdAt: Date;
     referenceLink?: string;
+    kind?: 'feedback' | 'comment';   // 'feedback' = formal Request Changes submission; 'comment' = general chat
   }[];
   status: 'pending' | 'approved' | 'changes-requested';
   submissionLinks: string[];

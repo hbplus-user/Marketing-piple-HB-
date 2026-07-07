@@ -657,7 +657,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
       const newRound = {
         round: target.currentRound + 1,
-        comments: comment ? [{ userId: currentUser.id, text: comment, createdAt: new Date(), referenceLink }] : [],
+        comments: comment ? [{ userId: currentUser.id, text: comment, createdAt: new Date(), referenceLink, kind: 'feedback' as const }] : [],
         status: 'pending' as const,
         submissionLinks: [],
         submissionNote: '',
@@ -721,7 +721,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setRequests(prev => {
       const target = prev.find(r => r.id === id);
       if (!target) return prev;
-      const newComment = { userId: currentUser.id, text: text.trim(), createdAt: new Date(), referenceLink };
+      const newComment = { userId: currentUser.id, text: text.trim(), createdAt: new Date(), referenceLink, kind: 'comment' as const };
       const updatedRounds = target.rounds.map((round, i) =>
         i === target.currentRound
           ? { ...round, comments: [...round.comments, newComment] }
