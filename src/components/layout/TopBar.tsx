@@ -16,7 +16,7 @@ const VIEW_LABELS: Record<View, { title: string; subtitle: string }> = {
 
 export default function TopBar() {
   const { activeView, openModal, requests } = useApp();
-  const { notifications, unreadCount, markAllRead } = useNotifications();
+  const { notifications, unreadCount, markAllRead, permission, requestPermission } = useNotifications();
   const [search, setSearch] = useState('');
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelPos, setPanelPos] = useState<{ top: number; right: number } | null>(null);
@@ -24,6 +24,7 @@ export default function TopBar() {
   const label = VIEW_LABELS[activeView];
 
   const togglePanel = () => {
+    requestPermission();
     setPanelOpen(v => {
       const next = !v;
       if (next) {
@@ -57,7 +58,7 @@ export default function TopBar() {
 
   return (
     <header
-      className="flex-shrink-0 border-b relative z-20"
+      className="flex-shrink-0 border-b relative z-50"
       style={{
         background: 'rgba(245,242,233,0.95)',
         backdropFilter: 'blur(12px)',
@@ -136,6 +137,19 @@ export default function TopBar() {
                   >
                     <div className="px-4 py-3 border-b border-gray-100">
                       <h3 className="text-sm font-bold text-gray-900">Notifications</h3>
+                      {permission === 'denied' && (
+                        <p className="text-[11px] text-red-500 mt-1">
+                          Browser alerts are blocked. Enable notifications for this site in your browser settings to get sound + popup alerts.
+                        </p>
+                      )}
+                      {permission === 'default' && (
+                        <button
+                          onClick={requestPermission}
+                          className="text-[11px] text-[#a9674d] hover:underline mt-1"
+                        >
+                          Enable sound + popup alerts
+                        </button>
+                      )}
                     </div>
                     {notifications.length === 0 ? (
                       <p className="text-xs text-gray-400 italic px-4 py-6 text-center">You're all caught up.</p>

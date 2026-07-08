@@ -4,6 +4,7 @@ import { Plus } from 'lucide-react';
 import type { ContentRequest, Status } from '../../types';
 import KanbanCard from './KanbanCard';
 import { useApp } from '../../context/AppContext';
+import { playNotificationSound, unlockAudio } from '../../utils/notificationSound';
 
 const STATUS_COLORS: Record<Status, string> = {
   'Brief Approval':  '#888888',
@@ -27,6 +28,9 @@ export default function KanbanColumn({ status, requests }: KanbanColumnProps) {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
+    // The drop itself is a real user gesture — good moment to unlock audio for
+    // any later async sound playback too (e.g. incoming notifications).
+    unlockAudio();
     const reqId = e.dataTransfer.getData('text/plain');
     const dragged = allRequests.find(r => r.id === reqId);
     if (!dragged || dragged.status === status) return;
@@ -59,6 +63,9 @@ export default function KanbanColumn({ status, requests }: KanbanColumnProps) {
     }
 
     dragMoveRequest(reqId, status);
+    // Immediate confirmation for whoever just did the drag — the notification
+    // list itself deliberately skips your own actions, so this can't rely on that.
+    playNotificationSound();
   };
 
   return (
