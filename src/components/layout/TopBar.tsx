@@ -1,9 +1,11 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
-import { Bell, Plus, Search } from 'lucide-react';
+import { Bell, Plus, Search, X } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useNotifications } from '../../hooks/useNotifications';
+import Badge from '../shared/Badge';
+import StatusChip from '../shared/StatusChip';
 import type { View } from '../../types';
 
 const VIEW_LABELS: Record<View, { title: string; subtitle: string }> = {
@@ -15,13 +17,41 @@ const VIEW_LABELS: Record<View, { title: string; subtitle: string }> = {
 };
 
 export default function TopBar() {
-  const { activeView, openModal, requests } = useApp();
+  const { activeView, openModal, requests, users } = useApp();
   const { notifications, unreadCount, markAllRead, permission, requestPermission } = useNotifications();
   const [search, setSearch] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelPos, setPanelPos] = useState<{ top: number; right: number } | null>(null);
   const bellRef = useRef<HTMLButtonElement>(null);
   const label = VIEW_LABELS[activeView];
+
+  const searchResults = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return [];
+    const peopleNamesFor = (r: typeof requests[number]) =>
+      [r.requesterId, r.ownerId, ...r.assigneeIds, ...r.reviewerIds, ...(r.followerIds ?? [])]
+        .map(id => users.find(u => u.id === id)?.name ?? '')
+        .join(' ')
+        .toLowerCase();
+
+    return requests
+      .filter(r =>
+        r.title.toLowerCase().includes(q) ||
+        r.id.toLowerCase().includes(q) ||
+        (r.brief ?? '').toLowerCase().includes(q) ||
+        peopleNamesFor(r).includes(q)
+      )
+      .slice(0, 8);
+  }, [search, requests, users]);
+
+  const goToSearchResult = (requestId: string) => {
+    const req = requests.find(r => r.id === requestId);
+    setSearch('');
+    setSearchFocused(false);
+    if (!req) return;
+    openModal({ type: req.status === 'Design Review' ? 'review-feedback' : 'designer-task', requestId });
+  };
 
   const togglePanel = () => {
     requestPermission();
@@ -82,16 +112,52 @@ export default function TopBar() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search requests, people, briefs…"
-              className="w-full pl-9 pr-4 py-2 text-sm border rounded-xl focus:outline-none text-[#1a1a1a] placeholder:text-[#c6b9aa] transition-shadow"
+              className="w-full pl-9 pr-8 py-2 text-sm border rounded-xl focus:outline-none text-[#1a1a1a] placeholder:text-[#c6b9aa] transition-shadow"
               style={{
                 background: 'rgba(255,255,255,0.7)',
                 borderColor: '#ede0d0',
                 boxShadow: 'inset 0 2px 4px rgba(83,55,43,0.05), inset 0 1px 0 rgba(255,255,255,0.6)',
               }}
-              onFocus={e => (e.currentTarget.style.borderColor = '#a9674d')}
-              onBlur={e => (e.currentTarget.style.borderColor = '#ede0d0')}
+              onFocus={e => { e.currentTarget.style.borderColor = '#a9674d'; setSearchFocused(true); }}
+              onBlur={e => { e.currentTarget.style.borderColor = '#ede0d0'; setSearchFocused(false); }}
+              onKeyDown={e => { if (e.key === 'Escape') { setSearch(''); e.currentTarget.blur(); } }}
               aria-label="Search"
             />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                onMouseDown={e => e.preventDefault()}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#b8a898] hover:text-[#8a4f39] transition-colors"
+                aria-label="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+
+            {searchFocused && search.trim() && (
+              <div
+                className="absolute left-0 top-full mt-2 w-full max-h-96 overflow-y-auto bg-white rounded-xl border border-gray-200 shadow-xl z-50"
+                onMouseDown={e => e.preventDefault()}
+              >
+                {searchResults.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic px-4 py-6 text-center">No matches for "{search}".</p>
+                ) : (
+                  <div className="py-1">
+                    {searchResults.map(r => (
+                      <button
+                        key={r.id}
+                        onClick={() => goToSearchResult(r.id)}
+                        className="w-full text-left px-4 py-2.5 flex items-center gap-2.5 hover:bg-gray-50 transition-colors"
+                      >
+                        <Badge pipeline={r.pipeline} />
+                        <span className="flex-1 min-w-0 text-xs font-medium text-gray-800 truncate">{r.title}</span>
+                        <StatusChip status={r.status} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

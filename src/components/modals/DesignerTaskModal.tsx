@@ -9,7 +9,7 @@ import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
 import { daysToDeadline } from '../../utils/deadlineUtils';
-import { canEdit, canApprove, canWorkOnDesign, isTaskApproved } from '../../utils/permissions';
+import { canEdit, canApprove, canWorkOnDesign, canReassignOwner, isTaskApproved } from '../../utils/permissions';
 import { isValidUrl } from '../../utils/validation';
 import type { Status } from '../../types';
 
@@ -495,10 +495,22 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
               {owner && (
                 <div>
                   <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Owner</p>
-                  <div className="flex items-center gap-2">
-                    <Avatar initials={owner.initials} color={owner.avatarColor} size="sm" />
-                    <span className="text-xs font-medium text-gray-700">{owner.name}</span>
-                  </div>
+                  {canReassignOwner(currentUser.role, req, currentUser.id) ? (
+                    <select
+                      value={req.ownerId}
+                      onChange={e => updateRequest(req.id, { ownerId: e.target.value })}
+                      className="w-full px-2 py-1.5 text-xs rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
+                    >
+                      {users.map(u => (
+                        <option key={u.id} value={u.id}>{u.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Avatar initials={owner.initials} color={owner.avatarColor} size="sm" />
+                      <span className="text-xs font-medium text-gray-700">{owner.name}</span>
+                    </div>
+                  )}
                 </div>
               )}
               <div>

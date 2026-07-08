@@ -7,7 +7,7 @@ import Badge from '../shared/Badge';
 import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
-import { canApprove, canRequestChanges, canRemoveCreator, canEditPostDate } from '../../utils/permissions';
+import { canApprove, canRequestChanges, canRemoveCreator, canEditPostDate, canReassignOwner } from '../../utils/permissions';
 import { isValidUrl } from '../../utils/validation';
 
 const QUICK_CHIPS = [
@@ -21,7 +21,7 @@ const QUICK_CHIPS = [
 type ActivityTab = 'all' | 'comments' | 'history';
 
 export default function ReviewFeedbackModal({ open, requestId }: { open: boolean; requestId?: string }) {
-  const { requests, closeModal, approveRequest, requestChanges, removeCreatorFromApproval, addComment, currentUser, openModal, users } = useApp();
+  const { requests, closeModal, approveRequest, requestChanges, removeCreatorFromApproval, addComment, updateRequest, currentUser, openModal, users } = useApp();
   const [comment, setComment]           = useState('');
   const [refLink, setRefLink]           = useState('');
   const [requireFounder, setRequireFounder] = useState(false);
@@ -237,10 +237,22 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
               {ownerUser && (
                 <div>
                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">Owner</p>
-                  <div className="flex items-center gap-1.5">
-                    <Avatar initials={ownerUser.initials} color={ownerUser.avatarColor} size="sm" />
-                    <span className="text-xs text-gray-700">{ownerUser.name}</span>
-                  </div>
+                  {canReassignOwner(currentUser.role, req, currentUser.id) ? (
+                    <select
+                      value={req.ownerId}
+                      onChange={e => updateRequest(req.id, { ownerId: e.target.value })}
+                      className="w-full px-2 py-1.5 text-xs rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
+                    >
+                      {users.map(u => (
+                        <option key={u.id} value={u.id}>{u.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <Avatar initials={ownerUser.initials} color={ownerUser.avatarColor} size="sm" />
+                      <span className="text-xs text-gray-700">{ownerUser.name}</span>
+                    </div>
+                  )}
                 </div>
               )}
               {assigneeUsers.length > 0 && (

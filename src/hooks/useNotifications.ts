@@ -203,7 +203,7 @@ export function useNotifications() {
       playNotificationSound();
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         const latest = freshOnes[0];
-        new Notification('Marketing Pipeline', { body: latest.message });
+        new Notification('Marketing Prod Dashboard', { body: latest.message });
       }
     }
     knownUnreadIdsRef.current = currentUnreadIds;

@@ -39,13 +39,13 @@ export default function Sidebar() {
       <div className="flex items-center gap-3 px-5 py-5 border-b border-white/5">
         <img
           src="/client-logo.jpg"
-          alt="HB+ logo"
+          alt="Marketing Prod Dashboard logo"
           className="h-8 w-8 rounded-lg object-contain flex-shrink-0"
           style={{ background: 'white' }}
         />
         <div>
-          <p className="font-display text-[14px] font-bold text-[#f5f2e9] leading-tight tracking-wide">HB+</p>
-          <p className="text-[10px] text-[#a89e8e] leading-tight">Marketing Ops</p>
+          <p className="font-display text-[14px] font-bold text-[#f5f2e9] leading-tight tracking-wide">Marketing Prod</p>
+          <p className="text-[10px] text-[#a89e8e] leading-tight">Dashboard</p>
         </div>
       </div>
 
