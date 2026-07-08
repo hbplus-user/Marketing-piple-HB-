@@ -153,13 +153,10 @@ export default function MyTasksView() {
   const hasFilters = dueDateRange.start !== null || postDateRange.start !== null;
   const clearFilters = () => { setDueDateRange(EMPTY_RANGE); setPostDateRange(EMPTY_RANGE); };
 
-  // ── Me tab — I'm involved in it in any capacity ─────────────────────────────
+  // ── Me tab — I'm the owner or assigned to it ────────────────────────────────
   const isMine = (r: ContentRequest) =>
-    r.assigneeIds.includes(currentUser.id) ||
-    (r.followerIds ?? []).includes(currentUser.id) ||
-    r.requesterId === currentUser.id ||
     r.ownerId === currentUser.id ||
-    r.reviewerIds.includes(currentUser.id);
+    r.assigneeIds.includes(currentUser.id);
 
   const myTasks = sortByPriority(
     filteredRequests.filter(r =>

@@ -6,7 +6,15 @@ import { useApp } from '../../context/AppContext';
 import { daysToDeadline, getUrgency } from '../../utils/deadlineUtils';
 import { canEditPostDate } from '../../utils/permissions';
 import Badge from '../shared/Badge';
-import type { ContentRequest } from '../../types';
+import type { ContentRequest, UrgencyLevel } from '../../types';
+
+const URGENCY_FILTERS: { value: UrgencyLevel | 'all'; label: string }[] = [
+  { value: 'overdue',  label: 'Overdue' },
+  { value: 'urgent',   label: 'Urgent' },
+  { value: 'due-soon', label: 'Due soon' },
+  { value: 'on-track', label: 'On track' },
+  { value: 'all',      label: 'All' },
+];
 
 function KPITile({ label, value, color, bg }: { label: string; value: number; color: string; bg: string }) {
   const [displayed, setDisplayed] = useState(0);
@@ -33,6 +41,7 @@ export default function RedAlertView() {
   const { filteredRequests: requests, currentUser, openModal, users } = useApp();
   const [sortKey, setSortKey] = useState<keyof ContentRequest>('postDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [urgencyFilter, setUrgencyFilter] = useState<UrgencyLevel | 'all'>('overdue');
 
   const active = requests.filter(r => r.status !== 'Approved' && r.status !== 'Posted');
   const overdue = active.filter(r => getUrgency(r) === 'overdue').length;
@@ -43,16 +52,18 @@ export default function RedAlertView() {
   const onTrack = active.filter(r => getUrgency(r) === 'on-track').length;
   const shipped = requests.filter(r => r.status === 'Approved' && r.approvedAt).length;
 
-  const sortedRequests = [...requests].sort((a, b) => {
-    const av = a[sortKey], bv = b[sortKey];
-    if (av instanceof Date && bv instanceof Date) {
-      return sortDir === 'asc' ? av.getTime() - bv.getTime() : bv.getTime() - av.getTime();
-    }
-    if (typeof av === 'string' && typeof bv === 'string') {
-      return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
-    }
-    return 0;
-  });
+  const sortedRequests = [...requests]
+    .filter(r => urgencyFilter === 'all' || getUrgency(r) === urgencyFilter)
+    .sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey];
+      if (av instanceof Date && bv instanceof Date) {
+        return sortDir === 'asc' ? av.getTime() - bv.getTime() : bv.getTime() - av.getTime();
+      }
+      if (typeof av === 'string' && typeof bv === 'string') {
+        return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+      }
+      return 0;
+    });
 
   const toggleSort = (key: keyof ContentRequest) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -78,9 +89,20 @@ export default function RedAlertView() {
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-100 flex-1 overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-          <h3 className="text-sm font-semibold text-gray-700">All requests</h3>
-          <button className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 gap-4 flex-wrap">
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <h3 className="text-sm font-semibold text-gray-700">All requests</h3>
+            <select
+              value={urgencyFilter}
+              onChange={e => setUrgencyFilter(e.target.value as UrgencyLevel | 'all')}
+              className="px-2.5 py-1 text-xs border border-gray-200 rounded-lg text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
+            >
+              {URGENCY_FILTERS.map(f => (
+                <option key={f.value} value={f.value}>{f.label}</option>
+              ))}
+            </select>
+          </div>
+          <button className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors flex-shrink-0">
             <Download size={13} />
             Export
           </button>

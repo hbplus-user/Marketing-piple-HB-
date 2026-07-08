@@ -393,11 +393,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <Avatar initials={currentUser.initials} color={currentUser.avatarColor} size="sm" />
           <span className="text-[12px] text-gray-500 truncate">
-            Submitting as <span className="font-semibold text-gray-700">{currentUser.name}</span>.{' '}
-            {currentUser.role !== 'manager'
-              ? `${manager.name} will own and approve this request.`
-              : 'You will own and approve this request.'
-            }
+            Submitting as <span className="font-semibold text-gray-700">{currentUser.name}</span>.
           </span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">

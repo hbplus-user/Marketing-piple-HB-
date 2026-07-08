@@ -12,6 +12,13 @@ export interface NotificationItem {
   read: boolean;
 }
 
+export interface ToastItem {
+  id: string;
+  message: string;
+  timestamp: Date;
+  requestId: string;
+}
+
 const LOG_MESSAGES: Partial<Record<ActivityLogType, string>> = {
   submitted_for_review: 'submitted this for design review',
   partial_approval:     'partially approved this request',
