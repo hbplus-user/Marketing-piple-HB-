@@ -7,9 +7,10 @@ import Badge from '../shared/Badge';
 import StatusChip from '../shared/StatusChip';
 import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
+import Linkify from '../shared/Linkify';
 import { useApp } from '../../context/AppContext';
 import { daysToDeadline } from '../../utils/deadlineUtils';
-import { canEdit, canApprove, canWorkOnDesign, canReassignOwner, isTaskApproved } from '../../utils/permissions';
+import { canEdit, canApprove, canWorkOnDesign, canReassignOwner, isTaskApproved, canEditSubmission } from '../../utils/permissions';
 import { isValidUrl } from '../../utils/validation';
 import type { Status } from '../../types';
 
@@ -28,7 +29,7 @@ type ActivityTab = 'all' | 'comments' | 'history';
 export default function DesignerTaskModal({ open, requestId, openReviewForm }: { open: boolean; requestId?: string; openReviewForm?: boolean }) {
   const {
     requests, closeModal, updateRequest, openModal, addComment,
-    markAsPosted, submitForReview, assignTask,
+    markAsPosted, submitForReview, editSubmission, assignTask,
     initiateDesign, currentUser, users,
   } = useApp();
 
@@ -45,6 +46,12 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
   const [reviewLinkInput, setReviewLinkInput] = useState('');
   const [reviewLinks, setReviewLinks]         = useState<string[]>([]);
   const [reviewNote, setReviewNote]           = useState('');
+
+  // Inline "fix a wrong submission link" editor — keyed by round number, one at a time.
+  const [editingRound, setEditingRound]     = useState<number | null>(null);
+  const [editLinkInput, setEditLinkInput]   = useState('');
+  const [editLinks, setEditLinks]           = useState<string[]>([]);
+  const [editNote, setEditNote]             = useState('');
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef   = useRef<HTMLDivElement>(null);
@@ -126,6 +133,13 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
   }, [open, requestId]);
 
   useEffect(() => {
+    setEditingRound(null);
+    setEditLinkInput('');
+    setEditLinks([]);
+    setEditNote('');
+  }, [open, requestId]);
+
+  useEffect(() => {
     if (composerOpen) textareaRef.current?.focus();
   }, [composerOpen]);
 
@@ -157,6 +171,27 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
   const openComposer = (prefill = '') => {
     setComposerOpen(true);
     if (prefill) setCommentText(prefill);
+  };
+
+  const startEditingRound = (round: number, links: string[], note: string) => {
+    setEditingRound(round);
+    setEditLinks(links);
+    setEditLinkInput('');
+    setEditNote(note);
+  };
+
+  const editLinkTrimmed = editLinkInput.trim();
+  const editLinkInvalid = editLinkTrimmed.length > 0 && !isValidUrl(editLinkTrimmed);
+  const addEditLink = () => {
+    if (editLinkTrimmed && !editLinkInvalid && !editLinks.includes(editLinkTrimmed)) {
+      setEditLinks(prev => [...prev, editLinkTrimmed]);
+      setEditLinkInput('');
+    }
+  };
+  const saveEditedSubmission = () => {
+    if (editingRound === null || editLinks.length === 0) return;
+    editSubmission(req.id, editingRound, editLinks, editNote);
+    setEditingRound(null);
   };
 
   const handleSend = () => {
@@ -447,7 +482,7 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
                                 </span>
                               </div>
                               <div className={`rounded-xl px-3 py-2 text-sm text-gray-700 leading-relaxed ${isMe ? 'bg-[#f5ece7]' : 'bg-gray-50'}`}>
-                                {item.text}
+                                <Linkify text={item.text} />
                                 {item.referenceLink && (
                                   <a href={item.referenceLink} target="_blank" rel="noopener noreferrer"
                                     className="mt-1 flex items-center gap-1 text-[11px] text-[#a9674d] hover:underline truncate">
@@ -601,18 +636,85 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
                       {round.status.replace('-', ' ')}
                     </span>
                   </div>
-                  {(round.submissionLinks.length > 0 || round.submissionNote) && (
+                  {(round.submissionLinks.length > 0 || round.submissionNote || editingRound === round.round) && (
                     <div className="mb-2 px-3 py-2 bg-[#f5ece7] rounded-lg border border-[#f0ddd5] space-y-1.5">
-                      {round.submissionNote && (
-                        <p className="text-xs text-[#8a4f39] whitespace-pre-line">{round.submissionNote}</p>
+                      {editingRound === round.round ? (
+                        <div className="space-y-2">
+                          <div className="flex gap-1.5">
+                            <input
+                              type="url"
+                              value={editLinkInput}
+                              onChange={e => setEditLinkInput(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') addEditLink(); }}
+                              placeholder="Paste corrected link…"
+                              className={`flex-1 min-w-0 px-2.5 py-1.5 text-xs border rounded-lg bg-white focus:outline-none focus:ring-2 ${
+                                editLinkInvalid
+                                  ? 'border-red-300 focus:ring-red-100 focus:border-red-400'
+                                  : 'border-gray-200 focus:ring-[#a9674d]/20 focus:border-[#a9674d]'
+                              }`}
+                            />
+                            <button
+                              onClick={addEditLink}
+                              disabled={!editLinkTrimmed || editLinkInvalid}
+                              className="px-2.5 py-1.5 bg-white hover:bg-gray-50 disabled:opacity-40 text-gray-600 rounded-lg text-xs font-medium transition-colors flex items-center gap-1 border border-gray-200"
+                            >
+                              <Plus size={11} /> Add
+                            </button>
+                          </div>
+                          {editLinkInvalid && (
+                            <p className="text-[11px] text-red-500">Enter a valid link, e.g. https://example.com</p>
+                          )}
+                          {editLinks.map((url, i) => (
+                            <div key={i} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white rounded-lg border border-[#f0ddd5]">
+                              <Link size={10} className="text-[#a9674d] flex-shrink-0" />
+                              <span className="text-[11px] text-[#8a4f39] truncate flex-1">{url}</span>
+                              <button onClick={() => setEditLinks(prev => prev.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500 flex-shrink-0">
+                                <X size={11} />
+                              </button>
+                            </div>
+                          ))}
+                          <textarea
+                            value={editNote}
+                            onChange={e => setEditNote(e.target.value)}
+                            placeholder="Handoff note (optional)"
+                            rows={2}
+                            className="w-full px-2.5 py-2 text-xs border border-gray-200 rounded-lg resize-none bg-white focus:outline-none focus:ring-2 focus:ring-[#a9674d]/20 focus:border-[#a9674d]"
+                          />
+                          <div className="flex items-center gap-2 justify-end">
+                            <button onClick={() => setEditingRound(null)} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors">
+                              Cancel
+                            </button>
+                            <button
+                              onClick={saveEditedSubmission}
+                              disabled={editLinks.length === 0}
+                              className="px-3.5 py-1.5 text-xs font-semibold bg-[#a9674d] hover:bg-[#8a4f39] disabled:opacity-40 text-white rounded-lg transition-colors flex items-center gap-1.5"
+                            >
+                              <Send size={11} /> Save
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {round.submissionNote && (
+                            <p className="text-xs text-[#8a4f39] whitespace-pre-line">{round.submissionNote}</p>
+                          )}
+                          {round.submissionLinks.map((url, i) => (
+                            <a key={i} href={url} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 text-[11px] text-[#a9674d] hover:text-[#8a4f39] truncate">
+                              <Link size={10} className="flex-shrink-0" />
+                              <span className="truncate">{url}</span>
+                            </a>
+                          ))}
+                          {canEditSubmission(currentUser.role, req, currentUser.id) && (
+                            <button
+                              onClick={() => startEditingRound(round.round, round.submissionLinks, round.submissionNote)}
+                              className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-[#a9674d] transition-colors pt-0.5"
+                            >
+                              <Pencil size={10} /> Edit link
+                            </button>
+                          )}
+                        </>
                       )}
-                      {round.submissionLinks.map((url, i) => (
-                        <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 text-[11px] text-[#a9674d] hover:text-[#8a4f39] truncate">
-                          <Link size={10} className="flex-shrink-0" />
-                          <span className="truncate">{url}</span>
-                        </a>
-                      ))}
                     </div>
                   )}
                   {feedbackComments.length === 0 ? (
@@ -629,7 +731,7 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
                                 <span className="text-[11px] font-semibold text-gray-700">{user?.name}</span>
                                 <span className="text-[10px] text-gray-400">{format(c.createdAt, 'MMM d, h:mm a')}</span>
                               </div>
-                              <p className="text-xs text-gray-600">{c.text}</p>
+                              <p className="text-xs text-gray-600"><Linkify text={c.text} /></p>
                               {c.referenceLink && (
                                 <a href={c.referenceLink} target="_blank" rel="noopener noreferrer"
                                   className="mt-1 flex items-center gap-1 text-[11px] text-[#a9674d] hover:text-[#8a4f39] truncate">

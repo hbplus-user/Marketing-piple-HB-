@@ -100,6 +100,7 @@ interface AppState {
   markAsPosted: (id: string) => void;
   initiateDesign: (id: string) => void;
   submitForReview: (id: string, links: string[], note: string) => void;
+  editSubmission: (id: string, round: number, links: string[], note: string) => void;
   acceptTask: (id: string, startDate?: Date) => void;
   removeAssignee: (id: string, userId: string) => void;
   assignTask: (id: string, userId: string) => void;
@@ -507,6 +508,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [makeLogEntry, authUser]);
 
+  // Fixes a round's submitted links/note in place — e.g. the submitter pasted the
+  // wrong URL. Doesn't touch status or approvedBy, so it's safe to use even on a
+  // round that's already been approved (unlike submitForReview, which re-opens review).
+  const editSubmission = useCallback((id: string, round: number, links: string[], note: string) => {
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target) return prev;
+      const logEntry = makeLogEntry('status_change', target.status, target.status, `edited submitted link${links.length !== 1 ? 's' : ''} (round ${round})`);
+      const updatedRounds = target.rounds.map((r, i) =>
+        i === round ? { ...r, submissionLinks: links, submissionNote: note } : r
+      );
+      const updated: ContentRequest = {
+        ...target,
+        rounds: updatedRounds,
+        activityLog: [...(target.activityLog ?? []), logEntry],
+      };
+      if (authUser) {
+        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
+          if (error) console.error('[Pipeline] Sync failed:', error.message);
+        });
+      }
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [makeLogEntry, authUser]);
+
   const acceptTask = useCallback((id: string, startDate?: Date) => {
     setRequests(prev => {
       const target = prev.find(r => r.id === id);
@@ -837,7 +863,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       activePipelines, dateRange, dateFilterTypes, backups, backupsLoading,
       setCurrentUser, refreshUsers, setActiveView, openModal, closeModal,
       updateRequest, addRequest, approveRequest, markAsPosted,
-      initiateDesign, submitForReview, acceptTask, removeAssignee, assignTask, dragMoveRequest, approveAndMoveRequest, requestChanges,
+      initiateDesign, submitForReview, editSubmission, acceptTask, removeAssignee, assignTask, dragMoveRequest, approveAndMoveRequest, requestChanges,
       editPostDate, removeCreatorFromApproval, addComment,
       createBackup, restoreAll, restoreByRole, restoreByUser, restoreOne, deleteBackup,
       togglePipeline, setDateRange, toggleDateFilterType, setDateFilterTypes, clearFilters,

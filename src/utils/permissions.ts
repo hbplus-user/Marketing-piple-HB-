@@ -68,6 +68,11 @@ export function canWorkOnDesign(role: Role, req: ContentRequest, userId: string)
   return role === 'designer' || role === 'manager' || req.ownerId === userId;
 }
 
+/** Whoever could submit a round (assignee, designer, manager, or owner) can also correct its link afterward. */
+export function canEditSubmission(role: Role, req: ContentRequest, userId: string): boolean {
+  return req.assigneeIds.includes(userId) || canWorkOnDesign(role, req, userId);
+}
+
 /** Only the task creator (requesterId) or a manager can edit a task. */
 export function canEdit(role: Role, req: ContentRequest, userId: string): boolean {
   return role === 'manager' || req.requesterId === userId;
