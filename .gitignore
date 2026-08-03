@@ -23,3 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# SQL scripts (run manually against Supabase, not part of the app build)
+*.sql
