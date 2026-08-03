@@ -1,13 +1,18 @@
 import { useState } from 'react';
 import { format, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
-import { ChevronDown, Flag, X, CalendarDays, Clock, Users, User } from 'lucide-react';
+import { ChevronDown, Flag, X, CalendarDays, Clock, Users, User, ListFilter } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import Badge from '../shared/Badge';
 import StatusChip from '../shared/StatusChip';
 import Avatar from '../shared/Avatar';
 import DateRangePicker from '../shared/DateRangePicker';
 import type { DateRange } from '../../context/AppContext';
-import type { ContentRequest, Priority } from '../../types';
+import type { ContentRequest, Priority, Status } from '../../types';
+
+const ALL_STATUSES: Status[] = ['Brief Approval', 'Design', 'Design Progress', 'Design Review', 'Approved', 'Posted'];
+// Default view hides completed work (Approved/Posted) so the list opens on what
+// still needs doing — still fully togglable via the status filter itself.
+const DEFAULT_STATUSES: Status[] = ALL_STATUSES.filter(s => s !== 'Approved' && s !== 'Posted');
 
 const PRIORITY_CONFIG: Record<Priority, { label: string; color: string; bg: string; dot: string }> = {
   high:   { label: 'High',   color: '#dc2626', bg: '#fee2e2', dot: '#ef4444' },
@@ -66,6 +71,62 @@ function PriorityPicker({ priority, onChange }: { priority?: Priority; onChange:
                 <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: c.dot }} />
                 <span className="text-[12px] font-medium" style={{ color: c.color }}>{c.label}</span>
               </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatusFilterPicker({ selected, onChange }: { selected: Status[]; onChange: (s: Status[]) => void }) {
+  const [open, setOpen] = useState(false);
+  const allSelected = selected.length === ALL_STATUSES.length;
+
+  const toggle = (s: Status) => {
+    onChange(selected.includes(s) ? selected.filter(x => x !== s) : [...selected, s]);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold transition-colors ${
+          allSelected
+            ? 'bg-white text-gray-500 border-gray-200 hover:text-gray-700'
+            : 'bg-[#f5ece7] text-[#8a4f39] border-[#f0ddd5]'
+        }`}
+      >
+        <ListFilter size={11} />
+        {allSelected ? 'All statuses' : `${selected.length} status${selected.length === 1 ? '' : 'es'}`}
+        <ChevronDown size={10} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            className="absolute right-0 top-full mt-1.5 bg-white border border-gray-100 rounded-xl z-50 py-1.5 min-w-[190px]"
+            style={{ boxShadow: '0 8px 24px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06)' }}
+          >
+            <div className="flex items-center justify-between px-3 py-1 mb-1 border-b border-gray-50">
+              <button onClick={() => onChange(ALL_STATUSES)} className="text-[11px] font-medium text-[#a9674d] hover:underline">
+                Select all
+              </button>
+              <button onClick={() => onChange([])} className="text-[11px] font-medium text-gray-400 hover:text-gray-600">
+                Clear
+              </button>
+            </div>
+            {ALL_STATUSES.map(s => (
+              <label key={s} className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer transition-colors">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(s)}
+                  onChange={() => toggle(s)}
+                  className="w-3.5 h-3.5 rounded text-[#a9674d] focus:ring-[#a9674d]/30 border-gray-300 cursor-pointer"
+                />
+                <span className="text-[12px] text-gray-700">{s}</span>
+              </label>
             ))}
           </div>
         </>
@@ -149,9 +210,10 @@ export default function MyTasksView() {
   const [tab, setTab]               = useState<'me' | 'team'>('me');
   const [dueDateRange, setDueDateRange]   = useState<DateRange>(EMPTY_RANGE);
   const [postDateRange, setPostDateRange] = useState<DateRange>(EMPTY_RANGE);
+  const [statusFilter, setStatusFilter]   = useState<Status[]>(DEFAULT_STATUSES);
 
-  const hasFilters = dueDateRange.start !== null || postDateRange.start !== null;
-  const clearFilters = () => { setDueDateRange(EMPTY_RANGE); setPostDateRange(EMPTY_RANGE); };
+  const hasFilters = dueDateRange.start !== null || postDateRange.start !== null || statusFilter.length !== ALL_STATUSES.length;
+  const clearFilters = () => { setDueDateRange(EMPTY_RANGE); setPostDateRange(EMPTY_RANGE); setStatusFilter(ALL_STATUSES); };
 
   // ── Me tab — I'm the owner or assigned to it ────────────────────────────────
   const isMine = (r: ContentRequest) =>
@@ -161,6 +223,7 @@ export default function MyTasksView() {
   const myTasks = sortByPriority(
     filteredRequests.filter(r =>
       isMine(r) &&
+      statusFilter.includes(r.status) &&
       inRange(r.internalDeadline, dueDateRange) &&
       inRange(r.postDate, postDateRange)
     )
@@ -172,6 +235,7 @@ export default function MyTasksView() {
   // ── Team tab ──────────────────────────────────────────────────────────────
   const teamTasks = sortByPriority(
     allRequests.filter(r =>
+      statusFilter.includes(r.status) &&
       inRange(r.internalDeadline, dueDateRange) &&
       inRange(r.postDate, postDateRange)
     )
@@ -253,8 +317,12 @@ export default function MyTasksView() {
           </div>
         </div>
 
-        {/* Date filters */}
+        {/* Filters */}
         <div className="flex items-center gap-2 flex-wrap">
+          <StatusFilterPicker selected={statusFilter} onChange={setStatusFilter} />
+
+          <span className="w-px h-5 bg-gray-200 flex-shrink-0" />
+
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] font-semibold text-gray-500 flex items-center gap-1">
               <Clock size={11} className="text-amber-500" /> Due date

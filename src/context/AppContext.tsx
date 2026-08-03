@@ -734,8 +734,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [currentUser.id, syncToSupabase]);
 
-  // Only the comment's own author may edit or delete it — no manager override,
-  // this is about someone fixing/retracting their own words, not moderation.
+  // Only the comment's own author may edit it — this is about someone
+  // fixing/retracting their own words, not moderation.
   const editComment = useCallback((id: string, round: number, commentId: string, text: string) => {
     if (!text.trim()) return;
     setRequests(prev => {
@@ -759,20 +759,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [currentUser.id, syncToSupabase]);
 
+  // Delete is manager-only moderation, not an authorship right — unlike edit,
+  // deliberately no author-can-delete-own-comment path.
   const deleteComment = useCallback((id: string, round: number, commentId: string) => {
+    if (currentUser.role !== 'manager') return;
     setRequests(prev => {
       const target = prev.find(r => r.id === id);
       if (!target) return prev;
       const updatedRounds = target.rounds.map((r, i) =>
         i === round
-          ? { ...r, comments: r.comments.filter(c => !(c.id === commentId && c.userId === currentUser.id)) }
+          ? { ...r, comments: r.comments.filter(c => c.id !== commentId) }
           : r
       );
       const updated: ContentRequest = { ...target, rounds: updatedRounds };
       syncToSupabase(updated);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [currentUser.id, syncToSupabase]);
+  }, [currentUser.role, syncToSupabase]);
 
   // ── Backup helpers ────────────────────────────────────────────────────────
 

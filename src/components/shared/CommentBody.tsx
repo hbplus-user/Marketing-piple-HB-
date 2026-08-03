@@ -11,9 +11,10 @@ interface CommentLike {
   editedAt?: Date;
 }
 
-// Renders a comment's text/link, plus (only for the comment's own author) inline
-// Edit/Delete controls. Comments created before `id` existed have no id, so they
-// can't be targeted for edit/delete — isMine requires one.
+// Renders a comment's text/link, plus inline Edit/Delete controls: Edit is only
+// for the comment's own author, Delete is manager-only (moderation, not
+// authorship). Comments created before `id` existed have no id, so they can't
+// be targeted for either — both require one.
 export default function CommentBody({
   requestId, round, comment, textClassName,
 }: { requestId: string; round: number; comment: CommentLike; textClassName?: string }) {
@@ -22,7 +23,8 @@ export default function CommentBody({
   const [text, setText] = useState(comment.text);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const isMine = !!comment.id && comment.userId === currentUser.id;
+  const canEdit = !!comment.id && comment.userId === currentUser.id;
+  const canDelete = !!comment.id && currentUser.role === 'manager';
 
   const save = () => {
     if (!comment.id || !text.trim()) return;
@@ -76,7 +78,7 @@ export default function CommentBody({
           {comment.referenceLink}
         </a>
       )}
-      {isMine && (
+      {(canEdit || canDelete) && (
         confirmingDelete ? (
           <div className="mt-1.5 flex items-center gap-2 text-[11px]">
             <span className="text-gray-500">Delete this comment?</span>
@@ -89,12 +91,16 @@ export default function CommentBody({
           </div>
         ) : (
           <div className="mt-1 flex items-center gap-2.5">
-            <button onClick={() => setEditing(true)} className="flex items-center gap-0.5 text-[10px] text-gray-400 hover:text-[#a9674d] transition-colors">
-              <Pencil size={9} /> Edit
-            </button>
-            <button onClick={() => setConfirmingDelete(true)} className="flex items-center gap-0.5 text-[10px] text-gray-400 hover:text-red-500 transition-colors">
-              <Trash2 size={9} /> Delete
-            </button>
+            {canEdit && (
+              <button onClick={() => setEditing(true)} className="flex items-center gap-0.5 text-[10px] text-gray-400 hover:text-[#a9674d] transition-colors">
+                <Pencil size={9} /> Edit
+              </button>
+            )}
+            {canDelete && (
+              <button onClick={() => setConfirmingDelete(true)} className="flex items-center gap-0.5 text-[10px] text-gray-400 hover:text-red-500 transition-colors">
+                <Trash2 size={9} /> Delete
+              </button>
+            )}
           </div>
         )
       )}
