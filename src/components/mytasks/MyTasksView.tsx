@@ -10,9 +10,9 @@ import type { DateRange } from '../../context/AppContext';
 import type { ContentRequest, Priority, Status } from '../../types';
 
 const ALL_STATUSES: Status[] = ['Brief Approval', 'Design', 'Design Progress', 'Design Review', 'Approved', 'Posted'];
-// Default view hides completed work (Approved/Posted) so the list opens on what
-// still needs doing — still fully togglable via the status filter itself.
-const DEFAULT_STATUSES: Status[] = ALL_STATUSES.filter(s => s !== 'Approved' && s !== 'Posted');
+// Default view hides only Posted (fully done) so the list opens on everything
+// still in flight, including Approved — still fully togglable via the filter.
+const DEFAULT_STATUSES: Status[] = ALL_STATUSES.filter(s => s !== 'Posted');
 
 const PRIORITY_CONFIG: Record<Priority, { label: string; color: string; bg: string; dot: string }> = {
   high:   { label: 'High',   color: '#dc2626', bg: '#fee2e2', dot: '#ef4444' },
