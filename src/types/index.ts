@@ -39,9 +39,11 @@ export interface User {
 export interface ReviewRound {
   round: number;
   comments: {
+    id?: string;                     // optional for backwards compat with rounds created before comments had ids
     userId: string;
     text: string;
     createdAt: Date;
+    editedAt?: Date;
     referenceLink?: string;
     kind?: 'feedback' | 'comment';   // 'feedback' = formal Request Changes submission; 'comment' = general chat
   }[];

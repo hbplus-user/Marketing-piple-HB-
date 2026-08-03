@@ -110,6 +110,8 @@ interface AppState {
   editPostDate: (id: string, newDate: Date, reason: string) => void;
   removeCreatorFromApproval: (id: string) => void;
   addComment: (id: string, text: string, referenceLink?: string) => void;
+  editComment: (id: string, round: number, commentId: string, text: string) => void;
+  deleteComment: (id: string, round: number, commentId: string) => void;
   createBackup: (label?: string) => Promise<void>;
   restoreAll: (backupId: string) => Promise<void>;
   restoreByRole: (backupId: string, role: Role) => Promise<void>;
@@ -139,6 +141,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Guard: only sync to Supabase after we've finished the initial load
   const supabaseReady = useRef(false);
 
+  // Tracks the `updated_at` timestamp of the most recent write *we* fired for each
+  // request id. A poll or realtime event that reports an older timestamp for that
+  // id is a stale read racing our own in-flight upsert — without this guard it would
+  // silently revert the row to its pre-write state (the exact "task jumps back a
+  // step for no reason" bug).
+  const pendingWriteAt = useRef<Map<string, string>>(new Map());
+
   // Load all requests from Supabase when user logs in, then subscribe to real-time changes
   useEffect(() => {
     if (!authUser) return;
@@ -148,7 +157,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const loadRequests = () => {
       supabase
         .from('content_requests')
-        .select('data')
+        .select('data, updated_at')
         .order('updated_at', { ascending: false })
         .then(({ data, error }) => {
           if (error) {
@@ -156,7 +165,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (isFirstLoad) setRequests(MOCK_REQUESTS);
             return;
           }
-          const fresh = (data ?? []).map(row => migrateRequest(reviveObj(row.data) as ContentRequest));
+          const rows = (data ?? []).filter(row => {
+            const pending = pendingWriteAt.current.get((row.data as ContentRequest).id);
+            return !pending || row.updated_at >= pending;
+          });
+          const fresh = rows.map(row => migrateRequest(reviveObj(row.data) as ContentRequest));
           if (isFirstLoad) {
             setRequests(fresh);
           } else {
@@ -186,7 +199,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (payload.eventType === 'DELETE') {
             setRequests(prev => prev.filter(r => r.id !== (payload.old as { id: string }).id));
           } else {
-            const incoming = migrateRequest(reviveObj((payload.new as { data: unknown }).data) as ContentRequest);
+            const newRow = payload.new as { data: unknown; updated_at?: string };
+            const incoming = migrateRequest(reviveObj(newRow.data) as ContentRequest);
+            const pending = pendingWriteAt.current.get(incoming.id);
+            if (pending && newRow.updated_at && newRow.updated_at < pending) return; // stale echo of a write we've since overtaken
             setRequests(prev => {
               const idx = prev.findIndex(r => r.id === incoming.id);
               if (idx >= 0) return prev.map(r => r.id === incoming.id ? incoming : r);
@@ -337,6 +353,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return [...result].sort((a, b) => urgencyRank[getUrgency(a)] - urgencyRank[getUrgency(b)]);
   }, [requests, activePipelines, dateRange, dateFilterTypes, currentUser]);
 
+  // Single choke point for every write to content_requests — records the write's
+  // timestamp in pendingWriteAt (see above) before firing it, so a poll/realtime
+  // event that echoes back an older snapshot of this row gets ignored instead of
+  // reverting the UI to stale data.
+  const syncToSupabase = useCallback((updated: ContentRequest) => {
+    if (!authUser) return;
+    const updatedAt = new Date().toISOString();
+    pendingWriteAt.current.set(updated.id, updatedAt);
+    supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: updatedAt }).then(({ error }) => {
+      if (error) console.error('[Pipeline] Sync failed:', error.message);
+    });
+  }, [authUser]);
+
   const updateRequest = useCallback((id: string, updates: Partial<ContentRequest>) => {
     setRequests(prev => {
       const target = prev.find(r => r.id === id);
@@ -351,24 +380,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       
       const updated = { ...target, ...finalUpdates };
-      if (authUser) {
-        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
-          if (error) console.error('[Pipeline] Sync failed:', error.message);
-        });
-      }
+      syncToSupabase(updated);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [authUser]);
+  }, [syncToSupabase]);
 
   const addRequest = useCallback((req: ContentRequest) => {
     setRequests(prev => [req, ...prev]);
     // Immediately persist to Supabase so other users see it right away
-    if (authUser) {
-      supabase.from('content_requests').upsert({ id: req.id, data: req, updated_at: new Date().toISOString() }).then(({ error }) => {
-        if (error) console.error('[Pipeline] Failed to save new request:', error.message);
-      });
-    }
-  }, [authUser]);
+    syncToSupabase(req);
+  }, [syncToSupabase]);
 
   const makeLogEntry = useCallback((
     type: ActivityLogEntry['type'],
@@ -432,14 +453,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         rounds: updatedRounds,
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      if (authUser) {
-        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
-          if (error) console.error('[Pipeline] Sync failed:', error.message);
-        });
-      }
+      syncToSupabase(updated);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [currentUser.id, currentUser.role, makeLogEntry, authUser]);
+  }, [currentUser.id, currentUser.role, makeLogEntry, syncToSupabase]);
 
   const markAsPosted = useCallback((id: string) => {
     setRequests(prev => {
@@ -453,14 +470,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         status: 'Posted',
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      if (authUser) {
-        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
-          if (error) console.error('[Pipeline] Sync failed:', error.message);
-        });
-      }
+      syncToSupabase(updated);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [currentUser.id, makeLogEntry, authUser]);
+  }, [currentUser.id, makeLogEntry, syncToSupabase]);
 
   const initiateDesign = useCallback((id: string) => {
     const now = new Date();
@@ -475,14 +488,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         approvedBy: [],
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      if (authUser) {
-        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
-          if (error) console.error('[Pipeline] Sync failed:', error.message);
-        });
-      }
+      syncToSupabase(updated);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [makeLogEntry, authUser]);
+  }, [makeLogEntry, syncToSupabase]);
 
   const submitForReview = useCallback((id: string, links: string[], note: string) => {
     setRequests(prev => {
@@ -499,14 +508,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         approvedBy: [],
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      if (authUser) {
-        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
-          if (error) console.error('[Pipeline] Sync failed:', error.message);
-        });
-      }
+      syncToSupabase(updated);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [makeLogEntry, authUser]);
+  }, [makeLogEntry, syncToSupabase]);
 
   // Fixes a round's submitted links/note in place — e.g. the submitter pasted the
   // wrong URL. Doesn't touch status or approvedBy, so it's safe to use even on a
@@ -524,14 +529,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         rounds: updatedRounds,
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      if (authUser) {
-        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
-          if (error) console.error('[Pipeline] Sync failed:', error.message);
-        });
-      }
+      syncToSupabase(updated);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [makeLogEntry, authUser]);
+  }, [makeLogEntry, syncToSupabase]);
 
   const acceptTask = useCallback((id: string, startDate?: Date) => {
     setRequests(prev => {
@@ -554,14 +555,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         assigneeAcceptance: [...(target.assigneeAcceptance ?? []), entry],
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      if (authUser) {
-        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
-          if (error) console.error('[Pipeline] Sync failed:', error.message);
-        });
-      }
+      syncToSupabase(updated);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [currentUser.id, makeLogEntry, authUser]);
+  }, [currentUser.id, makeLogEntry, syncToSupabase]);
 
   const removeAssignee = useCallback((id: string, userId: string) => {
     setRequests(prev => {
@@ -577,14 +574,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         assigneeAcceptance: filtered,
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      if (authUser) {
-        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
-          if (error) console.error('[Pipeline] Sync failed:', error.message);
-        });
-      }
+      syncToSupabase(updated);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [makeLogEntry, authUser]);
+  }, [makeLogEntry, syncToSupabase]);
 
   const assignTask = useCallback((id: string, userId: string) => {
     setRequests(prev => {
@@ -602,14 +595,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         assigneeAcceptance: filteredAcceptance,
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      if (authUser) {
-        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
-          if (error) console.error('[Pipeline] Sync failed:', error.message);
-        });
-      }
+      syncToSupabase(updated);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [makeLogEntry, authUser]);
+  }, [makeLogEntry, syncToSupabase]);
 
   // Kanban drag-and-drop: dragging a card back into Brief Approval clears its
   // approval so it has to be re-approved. Any other plain drag just moves the card.
@@ -639,14 +628,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      if (authUser) {
-        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
-          if (error) console.error('[Pipeline] Sync failed:', error.message);
-        });
-      }
+      syncToSupabase(updated);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [makeLogEntry, authUser]);
+  }, [makeLogEntry, syncToSupabase]);
 
   // Dragging a card straight out of Brief Approval prompts the manager for an
   // assignee and the founder-review toggle, then approves and moves it in one step.
@@ -665,14 +650,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         status: targetStatus,
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      if (authUser) {
-        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
-          if (error) console.error('[Pipeline] Sync failed:', error.message);
-        });
-      }
+      syncToSupabase(updated);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [makeLogEntry, authUser]);
+  }, [makeLogEntry, syncToSupabase]);
 
   const requestChanges = useCallback((id: string, comment: string, referenceLink?: string) => {
     setRequests(prev => {
@@ -683,7 +664,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
       const newRound = {
         round: target.currentRound + 1,
-        comments: comment ? [{ userId: currentUser.id, text: comment, createdAt: new Date(), referenceLink, kind: 'feedback' as const }] : [],
+        comments: comment ? [{ id: `comment-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, userId: currentUser.id, text: comment, createdAt: new Date(), referenceLink, kind: 'feedback' as const }] : [],
         status: 'pending' as const,
         submissionLinks: [],
         submissionNote: '',
@@ -697,14 +678,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         approvedBy: [],
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      if (authUser) {
-        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
-          if (error) console.error('[Pipeline] Sync failed:', error.message);
-        });
-      }
+      syncToSupabase(updated);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [currentUser.id, makeLogEntry, authUser]);
+  }, [currentUser.id, makeLogEntry, syncToSupabase]);
 
   const editPostDate = useCallback((id: string, newDate: Date, reason: string) => {
     setRequests(prev => {
@@ -716,14 +693,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         internalDeadline: calcInternalDeadline(newDate),
         postDateHistory: [...target.postDateHistory, { date: target.postDate, reason, changedBy: currentUser.id }],
       };
-      if (authUser) {
-        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
-          if (error) console.error('[Pipeline] Sync failed:', error.message);
-        });
-      }
+      syncToSupabase(updated);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [currentUser.id, authUser]);
+  }, [currentUser.id, syncToSupabase]);
 
   const removeCreatorFromApproval = useCallback((id: string) => {
     setRequests(prev => {
@@ -733,21 +706,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...target,
         creatorRemovedFromApproval: true,
       };
-      if (authUser) {
-        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
-          if (error) console.error('[Pipeline] Sync failed:', error.message);
-        });
-      }
+      syncToSupabase(updated);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [authUser]);
+  }, [syncToSupabase]);
 
   const addComment = useCallback((id: string, text: string, referenceLink?: string) => {
     if (!text.trim()) return;
     setRequests(prev => {
       const target = prev.find(r => r.id === id);
       if (!target) return prev;
-      const newComment = { userId: currentUser.id, text: text.trim(), createdAt: new Date(), referenceLink, kind: 'comment' as const };
+      const newComment = {
+        id: `comment-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        userId: currentUser.id, text: text.trim(), createdAt: new Date(), referenceLink, kind: 'comment' as const,
+      };
       const updatedRounds = target.rounds.map((round, i) =>
         i === target.currentRound
           ? { ...round, comments: [...round.comments, newComment] }
@@ -757,14 +729,50 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...target,
         rounds: updatedRounds,
       };
-      if (authUser) {
-        supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: new Date().toISOString() }).then(({ error }) => {
-          if (error) console.error('[Pipeline] Sync failed:', error.message);
-        });
-      }
+      syncToSupabase(updated);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [currentUser.id, authUser]);
+  }, [currentUser.id, syncToSupabase]);
+
+  // Only the comment's own author may edit or delete it — no manager override,
+  // this is about someone fixing/retracting their own words, not moderation.
+  const editComment = useCallback((id: string, round: number, commentId: string, text: string) => {
+    if (!text.trim()) return;
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target) return prev;
+      const updatedRounds = target.rounds.map((r, i) =>
+        i === round
+          ? {
+              ...r,
+              comments: r.comments.map(c =>
+                c.id === commentId && c.userId === currentUser.id
+                  ? { ...c, text: text.trim(), editedAt: new Date() }
+                  : c
+              ),
+            }
+          : r
+      );
+      const updated: ContentRequest = { ...target, rounds: updatedRounds };
+      syncToSupabase(updated);
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [currentUser.id, syncToSupabase]);
+
+  const deleteComment = useCallback((id: string, round: number, commentId: string) => {
+    setRequests(prev => {
+      const target = prev.find(r => r.id === id);
+      if (!target) return prev;
+      const updatedRounds = target.rounds.map((r, i) =>
+        i === round
+          ? { ...r, comments: r.comments.filter(c => !(c.id === commentId && c.userId === currentUser.id)) }
+          : r
+      );
+      const updated: ContentRequest = { ...target, rounds: updatedRounds };
+      syncToSupabase(updated);
+      return prev.map(r => r.id === id ? updated : r);
+    });
+  }, [currentUser.id, syncToSupabase]);
 
   // ── Backup helpers ────────────────────────────────────────────────────────
 
@@ -864,7 +872,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setCurrentUser, refreshUsers, setActiveView, openModal, closeModal,
       updateRequest, addRequest, approveRequest, markAsPosted,
       initiateDesign, submitForReview, editSubmission, acceptTask, removeAssignee, assignTask, dragMoveRequest, approveAndMoveRequest, requestChanges,
-      editPostDate, removeCreatorFromApproval, addComment,
+      editPostDate, removeCreatorFromApproval, addComment, editComment, deleteComment,
       createBackup, restoreAll, restoreByRole, restoreByUser, restoreOne, deleteBackup,
       togglePipeline, setDateRange, toggleDateFilterType, setDateFilterTypes, clearFilters,
     }}>

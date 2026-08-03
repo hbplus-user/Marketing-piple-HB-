@@ -6,7 +6,7 @@ import Modal from '../shared/Modal';
 import Badge from '../shared/Badge';
 import RoundBadge from '../shared/RoundBadge';
 import Avatar from '../shared/Avatar';
-import Linkify from '../shared/Linkify';
+import CommentBody from '../shared/CommentBody';
 import { useApp } from '../../context/AppContext';
 import { canApprove, canRequestChanges, canRemoveCreator, canEditPostDate, canReassignOwner, canEditSubmission } from '../../utils/permissions';
 import { isValidUrl } from '../../utils/validation';
@@ -108,7 +108,9 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
       .filter(c => c.kind !== 'feedback')
       .map(c => ({
         kind: 'comment' as const,
+        id: c.id,
         date: c.createdAt,
+        editedAt: c.editedAt,
         userId: c.userId as string | undefined,
         text: c.text,
         referenceLink: c.referenceLink,
@@ -510,14 +512,13 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                                 {format(item.date, 'MMM d, yyyy')} at {format(item.date, 'h:mm a')}
                               </span>
                             </div>
-                            <div className={`rounded-xl px-3 py-2 text-sm text-gray-700 leading-relaxed ${isMe ? 'bg-[#f5ece7]' : 'bg-gray-50'}`}>
-                              <Linkify text={item.text} />
-                              {item.referenceLink && (
-                                <a href={item.referenceLink} target="_blank" rel="noopener noreferrer"
-                                  className="mt-1 flex items-center gap-1 text-[11px] text-[#a9674d] hover:underline truncate">
-                                  <Link size={10} />{item.referenceLink}
-                                </a>
-                              )}
+                            <div className={`rounded-xl px-3 py-2 ${isMe ? 'bg-[#f5ece7]' : 'bg-gray-50'}`}>
+                              <CommentBody
+                                requestId={req.id}
+                                round={item.round}
+                                comment={{ id: item.id, userId: item.userId ?? '', text: item.text, referenceLink: item.referenceLink, editedAt: item.editedAt }}
+                                textClassName="text-sm text-gray-700 leading-relaxed"
+                              />
                             </div>
                           </div>
                         </div>
@@ -660,25 +661,19 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                     {feedbackComments.map((c, i) => {
                       const user = users.find(u => u.id === c.userId);
                       return (
-                        <div key={i} className="flex items-start gap-2.5">
+                        <div key={c.id ?? i} className="flex items-start gap-2.5">
                           {user && <Avatar initials={user.initials} color={user.avatarColor} size="sm" title={user.name} />}
                           <div className="flex-1 bg-gray-50 rounded-xl px-3 py-2">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="text-[11px] font-semibold text-gray-700">{user?.name}</span>
                               <span className="text-[10px] text-gray-400">{format(c.createdAt, 'MMM d, h:mm a')}</span>
                             </div>
-                            <p className="text-xs text-gray-600"><Linkify text={c.text} /></p>
-                            {c.referenceLink && (
-                              <a
-                                href={c.referenceLink}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="mt-1 flex items-center gap-1 text-[11px] text-[#a9674d] hover:text-[#8a4f39] truncate"
-                              >
-                                <Link size={10} />
-                                {c.referenceLink}
-                              </a>
-                            )}
+                            <CommentBody
+                              requestId={req.id}
+                              round={round.round}
+                              comment={c}
+                              textClassName="text-xs text-gray-600"
+                            />
                           </div>
                         </div>
                       );

@@ -34,15 +34,12 @@ export default function NewRequestModal({ open }: { open: boolean }) {
   const defaultAssignee = users.find(u => u.name.toLowerCase().includes('chetna'));
   const defaultAppliedRef = useRef(false);
 
-  // Default "Assigned to" to Chetna each time the form opens fresh. Users load
-  // asynchronously, so keep watching until `defaultAssignee` actually resolves —
-  // but only apply it once per open, so it never overwrites a manual change.
+  // Default "Assigned to" to Chetna the first time a fresh draft is opened. Users
+  // load asynchronously, so keep watching until `defaultAssignee` resolves — but
+  // only apply it once per draft (ref is re-armed by reset(), not by closing the
+  // modal), so reopening a preserved draft never overwrites the user's own choice.
   useEffect(() => {
-    if (!open) {
-      defaultAppliedRef.current = false;
-      return;
-    }
-    if (!defaultAppliedRef.current && defaultAssignee) {
+    if (open && !defaultAppliedRef.current && defaultAssignee) {
       setAssigneeId(defaultAssignee.id);
       defaultAppliedRef.current = true;
     }
@@ -87,6 +84,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
     setPostDate(''); setInternalDeadlineStr(''); setDaysNeeded(3);
     setFollowerIds([]); setLinkInput(''); setReferenceLinks([]);
     setAssigneeId('');
+    defaultAppliedRef.current = false;
   };
 
   const handleSubmit = () => {
@@ -135,8 +133,12 @@ export default function NewRequestModal({ open }: { open: boolean }) {
 
   const isMeSelected = followerIds.includes(currentUser.id);
 
+  // A draft exists once the user has actually typed/selected something — used to
+  // decide whether closing should preserve the form or there's nothing to protect.
+  const hasDraft = !!(title.trim() || brief.trim() || pipeline || postDate || referenceLinks.length > 0);
+
   return (
-    <Modal open={open} onClose={() => { reset(); closeModal(); }} title="New content request" size="lg">
+    <Modal open={open} onClose={closeModal} title="New content request" size="lg">
       <div className="px-6 py-5 space-y-5">
 
         {/* Title */}
@@ -395,10 +397,23 @@ export default function NewRequestModal({ open }: { open: boolean }) {
           <span className="text-[12px] text-gray-500 truncate">
             Submitting as <span className="font-semibold text-gray-700">{currentUser.name}</span>.
           </span>
+          {hasDraft && (
+            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 text-[10px] font-semibold flex-shrink-0">
+              Draft saved
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
+          {hasDraft && (
+            <button
+              onClick={reset}
+              className="px-3 py-2 text-xs text-gray-400 hover:text-red-500 transition-colors"
+            >
+              Discard draft
+            </button>
+          )}
           <button
-            onClick={() => { reset(); closeModal(); }}
+            onClick={closeModal}
             className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
           >
             Cancel

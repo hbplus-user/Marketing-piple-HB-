@@ -1,10 +1,22 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Plus } from 'lucide-react';
+import { subDays } from 'date-fns';
 import type { ContentRequest, Status } from '../../types';
 import KanbanCard from './KanbanCard';
 import { useApp } from '../../context/AppContext';
 import { playNotificationSound, unlockAudio } from '../../utils/notificationSound';
+
+// Posted and Approved columns default to a rolling window (by postDate — the one
+// date every card already shows, and unlike approvedAt it's never null for a
+// founder-pending card) so they don't grow unbounded. "All time" extends past it.
+const DATE_FILTERED_STATUSES: Status[] = ['Approved', 'Posted'];
+const DATE_RANGE_OPTIONS: { label: string; days: number | null }[] = [
+  { label: 'Last 10 days', days: 10 },
+  { label: 'Last 30 days', days: 30 },
+  { label: 'Last 90 days', days: 90 },
+  { label: 'All time', days: null },
+];
 
 const STATUS_COLORS: Record<Status, string> = {
   'Brief Approval':  '#888888',
@@ -24,6 +36,14 @@ export default function KanbanColumn({ status, requests }: KanbanColumnProps) {
   const { openModal, requests: allRequests, dragMoveRequest, currentUser } = useApp();
   const color = STATUS_COLORS[status];
   const [isDragOver, setIsDragOver] = useState(false);
+  const isDateFiltered = DATE_FILTERED_STATUSES.includes(status);
+  const [dateRangeDays, setDateRangeDays] = useState<number | null>(10);
+
+  const visibleRequests = useMemo(() => {
+    if (!isDateFiltered || dateRangeDays === null) return requests;
+    const cutoff = subDays(new Date(), dateRangeDays);
+    return requests.filter(r => r.postDate >= cutoff);
+  }, [requests, isDateFiltered, dateRangeDays]);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -103,25 +123,46 @@ export default function KanbanColumn({ status, requests }: KanbanColumnProps) {
               border: '1px solid rgba(226,232,240,0.9)',
             }}
           >
-            {requests.length}
+            {visibleRequests.length}
+            {isDateFiltered && dateRangeDays !== null && visibleRequests.length !== requests.length && (
+              <span className="text-gray-400"> / {requests.length}</span>
+            )}
           </span>
         </div>
 
-        {/* 3D press add button */}
-        <motion.button
-          whileHover={{ scale: 1.12 }}
-          whileTap={{ scale: 0.9, y: 1 }}
-          onClick={() => openModal({ type: 'new-request' })}
-          className="w-6 h-6 flex items-center justify-center rounded-lg text-gray-400 hover:text-[#a9674d] transition-colors"
-          style={{
-            background: 'white',
-            boxShadow: '0 1px 3px rgba(15,23,42,0.10), inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -1px 0 rgba(15,23,42,0.06)',
-            border: '1px solid rgba(226,232,240,0.9)',
-          }}
+        <div className="flex items-center gap-1.5">
+          {/* Approved/Posted only: rolling window filter, extendable up to all time */}
+          {isDateFiltered && (
+            <select
+              value={dateRangeDays === null ? 'all' : String(dateRangeDays)}
+              onChange={e => setDateRangeDays(e.target.value === 'all' ? null : Number(e.target.value))}
+              className="text-[10px] font-medium text-gray-500 bg-white rounded-lg pl-1.5 pr-1 py-1 border border-gray-200/90 focus:outline-none focus:ring-1 focus:ring-[#a9674d]/30 cursor-pointer"
+              aria-label={`${status} date range`}
+            >
+              {DATE_RANGE_OPTIONS.map(opt => (
+                <option key={opt.label} value={opt.days === null ? 'all' : opt.days}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {/* 3D press add button */}
+          <motion.button
+            whileHover={{ scale: 1.12 }}
+            whileTap={{ scale: 0.9, y: 1 }}
+            onClick={() => openModal({ type: 'new-request' })}
+            className="w-6 h-6 flex items-center justify-center rounded-lg text-gray-400 hover:text-[#a9674d] transition-colors"
+            style={{
+              background: 'white',
+              boxShadow: '0 1px 3px rgba(15,23,42,0.10), inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -1px 0 rgba(15,23,42,0.06)',
+              border: '1px solid rgba(226,232,240,0.9)',
+            }}
           aria-label={`Add request to ${status}`}
         >
           <Plus size={11} />
         </motion.button>
+        </div>
       </div>
 
       {/* Column tray — inset 3D container */}
@@ -137,7 +178,7 @@ export default function KanbanColumn({ status, requests }: KanbanColumnProps) {
           minHeight: 200,
         }}
       >
-        {requests.length === 0 ? (
+        {visibleRequests.length === 0 ? (
           <div className="flex flex-col items-center justify-center min-h-[160px] gap-2">
             <span
               className="w-9 h-9 rounded-xl flex items-center justify-center text-gray-300 text-lg"
@@ -149,9 +190,17 @@ export default function KanbanColumn({ status, requests }: KanbanColumnProps) {
               ○
             </span>
             <p className="text-xs text-gray-400 font-medium">No requests</p>
+            {isDateFiltered && requests.length > 0 && (
+              <button
+                onClick={() => setDateRangeDays(null)}
+                className="text-[11px] text-[#a9674d] font-semibold hover:underline"
+              >
+                {requests.length} older item{requests.length !== 1 ? 's' : ''} hidden — show all time
+              </button>
+            )}
           </div>
         ) : (
-          requests.map(req => <KanbanCard key={req.id} req={req} />)
+          visibleRequests.map(req => <KanbanCard key={req.id} req={req} />)
         )}
       </div>
     </div>
