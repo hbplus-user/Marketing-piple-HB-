@@ -13,6 +13,9 @@ import { useAuth } from './AuthContext';
 
 const AUTO_INTERVAL = 6 * 60 * 60 * 1000;
 
+// How long a write of ours may suppress older-looking echoes before we stop trusting it.
+const PENDING_WRITE_TTL = 60_000;
+
 // Recursively revive ISO date strings in known date fields back to Date objects
 const DATE_FIELDS = new Set(['postDate', 'internalDeadline', 'approvedAt', 'createdAt', 'date', 'timestamp', 'acceptedAt', 'startDate', 'initiatedAt']);
 function reviveObj(obj: unknown): unknown {
@@ -95,7 +98,7 @@ interface AppState {
   openModal: (modal: ModalState) => void;
   closeModal: () => void;
   updateRequest: (id: string, updates: Partial<ContentRequest>) => void;
-  addRequest: (req: ContentRequest) => void;
+  addRequest: (req: Omit<ContentRequest, 'id'>) => Promise<{ ok: boolean; id?: string; error?: string }>;
   approveRequest: (id: string, requireFounderReview?: boolean) => void;
   markAsPosted: (id: string) => void;
   initiateDesign: (id: string) => void;
@@ -141,16 +144,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Guard: only sync to Supabase after we've finished the initial load
   const supabaseReady = useRef(false);
 
-  // Tracks the `updated_at` timestamp of the most recent write *we* fired for each
+  // Tracks the epoch-ms timestamp of the most recent write *we* fired for each
   // request id. A poll or realtime event that reports an older timestamp for that
   // id is a stale read racing our own in-flight upsert — without this guard it would
   // silently revert the row to its pre-write state (the exact "task jumps back a
   // step for no reason" bug).
-  const pendingWriteAt = useRef<Map<string, string>>(new Map());
+  //
+  // Stored as a number, not the raw ISO string: Postgres hands `updated_at` back in a
+  // different textual shape than the one we sent (`+00:00` vs `Z`, extra sub-ms
+  // digits), so the old string comparison judged *every* row we had ever written to
+  // be stale — permanently hiding freshly created tasks from later loads.
+  const pendingWriteAt = useRef<Map<string, number>>(new Map());
 
-  // Load all requests from Supabase when user logs in, then subscribe to real-time changes
+  // True only while an echo genuinely predates our own in-flight write. Entries also
+  // expire, so a dropped/failed write can never blacklist a row for the whole session.
+  const isStaleEcho = (id: string, rowUpdatedAt?: string | null) => {
+    const pending = pendingWriteAt.current.get(id);
+    if (pending === undefined) return false;
+    if (Date.now() - pending > PENDING_WRITE_TTL) { pendingWriteAt.current.delete(id); return false; }
+    const rowTs = rowUpdatedAt ? Date.parse(rowUpdatedAt) : NaN;
+    if (Number.isNaN(rowTs)) return false;
+    if (rowTs >= pending) { pendingWriteAt.current.delete(id); return false; } // our write landed
+    return true;
+  };
+
+  // Load all requests from Supabase when user logs in, then subscribe to real-time changes.
+  // Keyed on the user *id*, not the session object: supabase hands out a fresh user
+  // object on every TOKEN_REFRESHED / tab-focus event, which used to re-run this whole
+  // effect and wholesale-replace `requests` with a snapshot taken before the user's
+  // just-created task had committed — making the new task vanish from the board.
+  const authUserId = authUser?.id ?? null;
   useEffect(() => {
-    if (!authUser) return;
+    if (!authUserId) return;
     supabaseReady.current = false;
     let isFirstLoad = true;
 
@@ -165,13 +190,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             if (isFirstLoad) setRequests(MOCK_REQUESTS);
             return;
           }
-          const rows = (data ?? []).filter(row => {
-            const pending = pendingWriteAt.current.get((row.data as ContentRequest).id);
-            return !pending || row.updated_at >= pending;
-          });
+          const rows = (data ?? []).filter(row =>
+            !isStaleEcho((row.data as ContentRequest).id, row.updated_at)
+          );
           const fresh = rows.map(row => migrateRequest(reviveObj(row.data) as ContentRequest));
           if (isFirstLoad) {
-            setRequests(fresh);
+            // Replace, but keep any row we have an unconfirmed write for — otherwise a
+            // load that raced a just-created task would wipe it out of the UI.
+            setRequests(prev => {
+              const seen = new Set(fresh.map(r => r.id));
+              const inFlight = prev.filter(r => !seen.has(r.id) && pendingWriteAt.current.has(r.id));
+              return inFlight.length ? [...inFlight, ...fresh] : fresh;
+            });
           } else {
             // Fallback poll — merge rather than replace, so a transient/partial
             // response can never silently drop rows the UI already has.
@@ -201,8 +231,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           } else {
             const newRow = payload.new as { data: unknown; updated_at?: string };
             const incoming = migrateRequest(reviveObj(newRow.data) as ContentRequest);
-            const pending = pendingWriteAt.current.get(incoming.id);
-            if (pending && newRow.updated_at && newRow.updated_at < pending) return; // stale echo of a write we've since overtaken
+            if (isStaleEcho(incoming.id, newRow.updated_at)) return; // stale echo of a write we've since overtaken
             setRequests(prev => {
               const idx = prev.findIndex(r => r.id === incoming.id);
               if (idx >= 0) return prev.map(r => r.id === incoming.id ? incoming : r);
@@ -217,7 +246,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const pollTimer = setInterval(loadRequests, 45_000);
 
     return () => { supabase.removeChannel(channel); clearInterval(pollTimer); };
-  }, [authUser]);
+  }, [authUserId]);
 
 
   // Sync currentUser with active Supabase session
@@ -359,11 +388,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // reverting the UI to stale data.
   const syncToSupabase = useCallback((updated: ContentRequest) => {
     if (!authUser) return;
-    const updatedAt = new Date().toISOString();
-    pendingWriteAt.current.set(updated.id, updatedAt);
-    supabase.from('content_requests').upsert({ id: updated.id, data: updated, updated_at: updatedAt }).then(({ error }) => {
-      if (error) console.error('[Pipeline] Sync failed:', error.message);
-    });
+    const at = Date.now();
+    pendingWriteAt.current.set(updated.id, at);
+    supabase.from('content_requests')
+      .upsert({ id: updated.id, data: updated, updated_at: new Date(at).toISOString() })
+      .then(({ error }) => {
+        if (error) {
+          // Drop the guard so the next poll is allowed to restore the true server state
+          // instead of the local edit that never landed.
+          pendingWriteAt.current.delete(updated.id);
+          console.error('[Pipeline] Sync failed:', error.message);
+        }
+      });
   }, [authUser]);
 
   const updateRequest = useCallback((id: string, updates: Partial<ContentRequest>) => {
@@ -385,11 +421,45 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   }, [syncToSupabase]);
 
-  const addRequest = useCallback((req: ContentRequest) => {
-    setRequests(prev => [req, ...prev]);
-    // Immediately persist to Supabase so other users see it right away
-    syncToSupabase(req);
-  }, [syncToSupabase]);
+  // Creating a request is the one write we do *not* fire optimistically. The id is
+  // allocated from the server and the row is INSERTed (never upserted), so a colliding
+  // id fails loudly and gets retried instead of silently overwriting another task — and
+  // the caller only sees the modal close once the row is actually committed.
+  const addRequest = useCallback(async (
+    req: Omit<ContentRequest, 'id'>,
+  ): Promise<{ ok: boolean; id?: string; error?: string }> => {
+    if (!authUser) return { ok: false, error: 'You are signed out. Sign in again and retry.' };
+
+    // Allocate from the server rather than from local state: a list that was stale,
+    // still loading, or filtered by RLS used to hand out an id that already existed.
+    const { data: idRows, error: idErr } = await supabase.from('content_requests').select('id');
+    if (idErr) return { ok: false, error: idErr.message };
+    let next = 1;
+    for (const row of idRows ?? []) {
+      const m = /^REQ-(\d+)$/.exec(String(row.id));
+      if (m) next = Math.max(next, parseInt(m[1], 10) + 1);
+    }
+
+    for (let attempt = 0; attempt < 25; attempt++) {
+      const id = `REQ-${String(next + attempt).padStart(3, '0')}`;
+      const created = { ...req, id } as ContentRequest;
+      const at = Date.now();
+      pendingWriteAt.current.set(id, at);
+      const { error } = await supabase
+        .from('content_requests')
+        .insert({ id, data: created, updated_at: new Date(at).toISOString() });
+      if (!error) {
+        setRequests(prev => prev.some(r => r.id === id) ? prev : [created, ...prev]);
+        return { ok: true, id };
+      }
+      pendingWriteAt.current.delete(id);
+      if (error.code !== '23505') { // not a duplicate id — a real failure, surface it
+        console.error('[Pipeline] Create failed:', error.message);
+        return { ok: false, error: error.message };
+      }
+    }
+    return { ok: false, error: 'Could not allocate a free request id. Please try again.' };
+  }, [authUser]);
 
   const makeLogEntry = useCallback((
     type: ActivityLogEntry['type'],

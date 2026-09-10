@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect, useRef } from 'react';
 import { format, addDays } from 'date-fns';
-import { AlertTriangle, CheckCircle, Link, Plus, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Link, Loader2, Plus, X } from 'lucide-react';
 import Modal from '../shared/Modal';
 import Avatar from '../shared/Avatar';
 import { useApp } from '../../context/AppContext';
@@ -16,7 +16,7 @@ const PIPELINES: { value: Pipeline; label: string; desc: string; color: string }
 ];
 
 export default function NewRequestModal({ open }: { open: boolean }) {
-  const { closeModal, addRequest, currentUser, users, requests } = useApp();
+  const { closeModal, addRequest, currentUser, users } = useApp();
 
   const [title, setTitle]         = useState('');
   const [brief, setBrief]         = useState('');
@@ -29,6 +29,8 @@ export default function NewRequestModal({ open }: { open: boolean }) {
   const [assigneeId, setAssigneeId]   = useState('');
   const [linkInput, setLinkInput]   = useState('');
   const [referenceLinks, setReferenceLinks] = useState<string[]>([]);
+  const [saving, setSaving]       = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const linkInputRef = useRef<HTMLInputElement>(null);
 
   const defaultAssignee = users.find(u => u.name.toLowerCase().includes('chetna'));
@@ -65,7 +67,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
   const postDateObj = postDate ? new Date(postDate) : null;
 
   useEffect(() => {
-    if (postDateObj) {
+    if (postDateObj && !isNaN(postDateObj.getTime())) {
       setInternalDeadlineStr(format(calcInternalDeadline(postDateObj), 'yyyy-MM-dd'));
     } else {
       setInternalDeadlineStr('');
@@ -84,20 +86,30 @@ export default function NewRequestModal({ open }: { open: boolean }) {
     setPostDate(''); setInternalDeadlineStr(''); setDaysNeeded(3);
     setFollowerIds([]); setLinkInput(''); setReferenceLinks([]);
     setAssigneeId('');
+    setSaveError(null);
     defaultAppliedRef.current = false;
   };
 
-  const handleSubmit = () => {
-    if (!title || !pipeline || !postDateObj || !internalDeadline) return;
-    const maxNum = requests.reduce((max, r) => {
-      const m = r.id.match(/REQ-(\d+)/);
-      return m ? Math.max(max, parseInt(m[1], 10)) : max;
-    }, 0);
-    const id = `REQ-${String(maxNum + 1).padStart(3, '0')}`;
+  // Exactly the condition handleSubmit needs. The Submit button used to check less than
+  // this (no internal deadline), so clearing that field left an enabled button whose
+  // click did nothing at all — one of the ways "save" appeared to do nothing.
+  const canSubmit = !!(
+    title.trim() && pipeline &&
+    postDateObj && !isNaN(postDateObj.getTime()) &&
+    internalDeadline && !isNaN(internalDeadline.getTime())
+  );
+
+  const handleSubmit = async () => {
+    // Re-check the individual fields (not just `canSubmit`) so the values below are
+    // genuinely narrowed — this project doesn't run with strictNullChecks.
+    if (!canSubmit || saving || !pipeline || !postDateObj || !internalDeadline) return;
     const now = new Date();
 
-    addRequest({
-      id,
+    setSaving(true);
+    setSaveError(null);
+    // The id is allocated server-side by addRequest, so two people creating at once
+    // can't land on the same REQ-### and clobber each other.
+    const result = await addRequest({
       title,
       brief,
       pipeline,
@@ -127,6 +139,14 @@ export default function NewRequestModal({ open }: { open: boolean }) {
       assigneeAcceptance: [],
       category: pipeline === 'Organic' ? (category || null) : null,
     });
+    setSaving(false);
+
+    if (!result.ok) {
+      // Keep the draft exactly as typed so nothing is lost, and say what went wrong
+      // instead of closing as though it saved.
+      setSaveError(result.error ?? 'Could not save the request. Please try again.');
+      return;
+    }
     reset();
     closeModal();
   };
@@ -138,7 +158,9 @@ export default function NewRequestModal({ open }: { open: boolean }) {
   const hasDraft = !!(title.trim() || brief.trim() || pipeline || postDate || referenceLinks.length > 0);
 
   return (
-    <Modal open={open} onClose={closeModal} title="New content request" size="lg">
+    // Backdrop clicks don't dismiss this one — it's a long form, and a stray click
+    // outside used to close it mid-fill. Use the X or Cancel to close.
+    <Modal open={open} onClose={closeModal} title="New content request" size="lg" closeOnBackdrop={false}>
       <div className="px-6 py-5 space-y-5">
 
         {/* Title */}
@@ -379,6 +401,16 @@ export default function NewRequestModal({ open }: { open: boolean }) {
           )}
         </div>
 
+        {saveError && (
+          <div className="flex items-start gap-3 p-3 rounded-xl bg-red-50 border border-red-200">
+            <AlertTriangle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
+            <p className="text-[12px] text-red-600 font-medium">
+              Couldn't save this request: {saveError} Your draft is still here — press
+              Submit to try again.
+            </p>
+          </div>
+        )}
+
         {/* Red alert preview */}
         {showRedAlert && (
           <div className="flex items-start gap-3 p-3 rounded-xl bg-red-50 border border-red-100">
@@ -407,23 +439,26 @@ export default function NewRequestModal({ open }: { open: boolean }) {
           {hasDraft && (
             <button
               onClick={reset}
-              className="px-3 py-2 text-xs text-gray-400 hover:text-red-500 transition-colors"
+              disabled={saving}
+              className="px-3 py-2 text-xs text-gray-400 hover:text-red-500 disabled:text-gray-300 transition-colors"
             >
               Discard draft
             </button>
           )}
           <button
             onClick={closeModal}
-            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
+            disabled={saving}
+            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 disabled:text-gray-300 transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!title || !pipeline || !postDate}
-            className="px-4 py-2 text-sm font-medium bg-[#a9674d] hover:bg-[#8a4f39] disabled:bg-gray-200 disabled:text-gray-400 text-white rounded-lg transition-colors"
+            disabled={!canSubmit || saving}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-[#a9674d] hover:bg-[#8a4f39] disabled:bg-gray-200 disabled:text-gray-400 text-white rounded-lg transition-colors"
           >
-            Submit request
+            {saving && <Loader2 size={13} className="animate-spin" />}
+            {saving ? 'Saving…' : 'Submit request'}
           </button>
         </div>
       </div>
