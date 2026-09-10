@@ -8,7 +8,11 @@ interface ModalProps {
   title?: string;
   children: React.ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
-  /** Set false for form dialogs where a stray backdrop click shouldn't discard the view. */
+  /**
+   * Whether a click on the dimmed backdrop dismisses the dialog. Defaults to false:
+   * these dialogs hold half-filled forms and long task threads, and a stray click
+   * outside used to throw all of that away. Close via the X or the footer button.
+   */
   closeOnBackdrop?: boolean;
 }
 
@@ -20,7 +24,7 @@ const sizeClasses = {
   full: 'max-w-6xl w-full',
 };
 
-export default function Modal({ open, onClose, title, children, size = 'md', closeOnBackdrop = true }: ModalProps) {
+export default function Modal({ open, onClose, title, children, size = 'md', closeOnBackdrop = false }: ModalProps) {
   const firstFocusRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -55,7 +59,7 @@ export default function Modal({ open, onClose, title, children, size = 'md', clo
             transition={{ duration: 0.2, ease: 'easeOut' }}
             onClick={e => e.stopPropagation()}
           >
-            {title && (
+            {title ? (
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
                 <h2 className="text-base font-semibold text-gray-900">{title}</h2>
                 <button
@@ -67,6 +71,17 @@ export default function Modal({ open, onClose, title, children, size = 'md', clo
                   <X size={16} />
                 </button>
               </div>
+            ) : (
+              // No title bar to hang it off, so float the X over the top-right corner —
+              // every dialog needs a visible way out now that the backdrop doesn't close.
+              <button
+                ref={firstFocusRef}
+                onClick={onClose}
+                className="absolute top-3 right-3 z-10 p-1.5 rounded-lg bg-white/80 backdrop-blur-sm hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                aria-label="Close modal"
+              >
+                <X size={16} />
+              </button>
             )}
             <div className="overflow-y-auto flex-1">
               {children}

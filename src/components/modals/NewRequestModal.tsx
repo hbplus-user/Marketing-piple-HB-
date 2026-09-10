@@ -158,9 +158,7 @@ export default function NewRequestModal({ open }: { open: boolean }) {
   const hasDraft = !!(title.trim() || brief.trim() || pipeline || postDate || referenceLinks.length > 0);
 
   return (
-    // Backdrop clicks don't dismiss this one — it's a long form, and a stray click
-    // outside used to close it mid-fill. Use the X or Cancel to close.
-    <Modal open={open} onClose={closeModal} title="New content request" size="lg" closeOnBackdrop={false}>
+    <Modal open={open} onClose={closeModal} title="New content request" size="lg">
       <div className="px-6 py-5 space-y-5">
 
         {/* Title */}
