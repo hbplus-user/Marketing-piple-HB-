@@ -8,6 +8,8 @@ interface ModalProps {
   title?: string;
   children: React.ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
+  /** Set false for form dialogs where a stray backdrop click shouldn't discard the view. */
+  closeOnBackdrop?: boolean;
 }
 
 const sizeClasses = {
@@ -18,7 +20,7 @@ const sizeClasses = {
   full: 'max-w-6xl w-full',
 };
 
-export default function Modal({ open, onClose, title, children, size = 'md' }: ModalProps) {
+export default function Modal({ open, onClose, title, children, size = 'md', closeOnBackdrop = true }: ModalProps) {
   const firstFocusRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -39,7 +41,7 @@ export default function Modal({ open, onClose, title, children, size = 'md' }: M
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onClick={onClose}
+          onClick={closeOnBackdrop ? onClose : undefined}
           role="dialog"
           aria-modal="true"
           aria-label={title}
