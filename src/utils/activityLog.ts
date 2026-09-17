@@ -1,4 +1,4 @@
-import type { ActivityLogEntry } from '../types';
+import type { ActivityLogEntry, Status } from '../types';
 
 const LABELS: Record<ActivityLogEntry['type'], string> = {
   brief_approved:       'approved the brief',
@@ -10,17 +10,27 @@ const LABELS: Record<ActivityLogEntry['type'], string> = {
   status_change:        'moved the task',
 };
 
+/** One row of the task timeline. `from`/`to` are set only when the task changed stage. */
+export interface HistoryItem {
+  kind: 'history';
+  date: Date;
+  userId?: string;
+  text: string;
+  from?: Status;
+  to?: Status;
+}
+
 /**
- * One line describing an activity entry, including the stages it moved the task
- * between. The from → to pair is what makes the timeline auditable: a bare
- * "changed status" says nothing about what actually happened, and in particular
- * gives no way to spot a task sliding backwards out of Approved.
+ * Splits an activity entry into what the person did and, separately, the stages the
+ * task moved between — kept apart so the timeline can render the transition as
+ * coloured status chips instead of burying it in a sentence. The stage pair is what
+ * makes the history auditable: a bare "changed status" gives no way to see a task
+ * sliding backwards out of Approved.
  */
-export function describeActivity(entry: ActivityLogEntry): string {
-  const label = LABELS[entry.type] ?? entry.type;
-  const note  = entry.note ? ` — ${entry.note}` : '';
-  const moved = entry.fromStatus && entry.toStatus && entry.fromStatus !== entry.toStatus;
-  return moved
-    ? `${label}${note} · ${entry.fromStatus} → ${entry.toStatus}`
-    : `${label}${note}`;
+export function describeActivity(entry: ActivityLogEntry): { text: string; from?: Status; to?: Status } {
+  const base = LABELS[entry.type] ?? entry.type;
+  const text = entry.note ? `${base} — ${entry.note}` : base;
+  return entry.fromStatus && entry.toStatus && entry.fromStatus !== entry.toStatus
+    ? { text, from: entry.fromStatus, to: entry.toStatus }
+    : { text };
 }

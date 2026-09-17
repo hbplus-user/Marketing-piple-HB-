@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
-import { Paperclip, Calendar, Link, Send, ChevronRight, Plus, X, Pencil } from 'lucide-react';
+import { Paperclip, Calendar, Link, Send, ChevronRight, Plus, X, Pencil, ArrowRight } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Modal from '../shared/Modal';
 import Badge from '../shared/Badge';
@@ -13,7 +13,7 @@ import { daysToDeadline } from '../../utils/deadlineUtils';
 import { canEdit, canApprove, canWorkOnDesign, canReassignOwner, isTaskApproved, canEditSubmission } from '../../utils/permissions';
 import { isValidUrl } from '../../utils/validation';
 import type { Status } from '../../types';
-import { describeActivity } from '../../utils/activityLog';
+import { describeActivity, type HistoryItem } from '../../utils/activityLog';
 
 const STATUSES: Status[] = ['Brief Approval', 'Design', 'Design Progress', 'Design Review', 'Approved', 'Posted'];
 
@@ -83,7 +83,7 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
 
   const historyItems = useMemo(() => {
     if (!req) return [];
-    const items: { kind: 'history'; date: Date; userId?: string; text: string }[] = [];
+    const items: HistoryItem[] = [];
 
     items.push({ kind: 'history', date: req.createdAt, userId: req.requesterId, text: 'created this request' });
 
@@ -107,7 +107,7 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
         kind: 'history',
         date: entry.timestamp,
         userId: entry.userId,
-        text: describeActivity(entry),
+        ...describeActivity(entry),
       });
     }
 
@@ -526,10 +526,17 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
                             ? <Avatar initials={user.initials} color={user.avatarColor} size="sm" />
                             : <div className="w-5 h-5 rounded-full bg-gray-200 flex-shrink-0" />
                           }
-                          <p className="text-[12px] text-gray-500">
-                            <span className="font-semibold text-gray-700">{user?.name ?? 'System'}</span>{' '}
-                            {item.text}
-                            <span className="ml-2 text-[11px] text-gray-400">
+                          <p className="text-[12px] text-gray-500 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                            <span className="font-semibold text-gray-700">{user?.name ?? 'System'}</span>
+                            <span>{item.text}</span>
+                            {item.from && item.to && (
+                              <span className="inline-flex items-center gap-1">
+                                <StatusChip status={item.from} />
+                                <ArrowRight size={11} className="text-gray-400 flex-shrink-0" />
+                                <StatusChip status={item.to} />
+                              </span>
+                            )}
+                            <span className="text-[11px] text-gray-400">
                               · {format(item.date, 'MMM d, yyyy')} at {format(item.date, 'h:mm a')}
                             </span>
                           </p>
