@@ -17,6 +17,7 @@ import BackupRestoreModal from '../components/modals/BackupRestoreModal';
 import EditTaskModal from '../components/modals/EditTaskModal';
 import ManageTeamModal from '../components/modals/ManageTeamModal';
 import DragApproveModal from '../components/modals/DragApproveModal';
+import SyncNoticeBanner from '../components/shared/SyncNoticeBanner';
 
 export default function Dashboard() {
   const { activeView, activeModal } = useApp();
@@ -36,6 +37,8 @@ export default function Dashboard() {
           {activeView === 'mytasks'  && <MyTasksView />}
         </main>
       </div>
+
+      <SyncNoticeBanner />
 
       {/* Modals */}
       <NewRequestModal

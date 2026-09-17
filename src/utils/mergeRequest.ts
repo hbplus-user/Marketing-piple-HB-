@@ -87,3 +87,31 @@ export function mergeRequest(
   merged.rounds      = mergeRounds(server.rounds, updated.rounds, before?.rounds);
   return merged;
 }
+
+export type TransitionCheck = 'apply' | 'already-applied' | 'stale';
+
+/**
+ * Whether a stage change is still valid against the row as the server holds it now.
+ *
+ * Field-level merging can't protect `status` from an action whose whole point is to
+ * change it. A stage change is a decision made from what the person could *see*: a
+ * designer whose tab still showed a task in Design would click Initiate Design, and
+ * that wrote Design Progress straight over a task that had since been Approved. So a
+ * transition is only valid if the task is still in the stage it was decided from.
+ *
+ * - `apply`           — no stage change, or the task is still where the actor saw it.
+ * - `already-applied` — the task is already in the target stage (a duplicate of this
+ *                       same action, e.g. StrictMode re-running a state updater, or a
+ *                       retry after a lost response). Nothing to do.
+ * - `stale`           — the task has moved on since the actor looked. Refuse it.
+ */
+export function checkTransition(
+  server: ContentRequest,
+  updated: ContentRequest,
+  before?: ContentRequest,
+): TransitionCheck {
+  if (!before || updated.status === before.status) return 'apply';
+  if (server.status === updated.status) return 'already-applied';
+  if (server.status !== before.status) return 'stale';
+  return 'apply';
+}
