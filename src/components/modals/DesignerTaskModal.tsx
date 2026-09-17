@@ -126,11 +126,21 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
     }
   }, [open, requestId]);
 
+  // Everything below is per-task scratch state. This modal is never unmounted —
+  // Dashboard keeps it rendered and only flips `open` and `requestId` — so React holds
+  // on to it unless we clear it by hand. Without this an unsent comment followed you
+  // onto the next task you opened, and Send would post it to that task's thread.
   useEffect(() => {
     setEditingRound(null);
     setEditLinkInput('');
     setEditLinks([]);
     setEditNote('');
+    setCommentText('');
+    setRefLink('');
+    setShowRefLink(false);
+    setComposerOpen(false);
+    setDropdownOpen(false);
+    setDirectReqFounder(false);
   }, [open, requestId]);
 
   useEffect(() => {
