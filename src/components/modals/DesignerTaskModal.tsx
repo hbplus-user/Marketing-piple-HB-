@@ -13,6 +13,7 @@ import { daysToDeadline } from '../../utils/deadlineUtils';
 import { canEdit, canApprove, canWorkOnDesign, canReassignOwner, isTaskApproved, canEditSubmission } from '../../utils/permissions';
 import { isValidUrl } from '../../utils/validation';
 import type { Status } from '../../types';
+import { describeActivity } from '../../utils/activityLog';
 
 const STATUSES: Status[] = ['Brief Approval', 'Design', 'Design Progress', 'Design Review', 'Approved', 'Posted'];
 
@@ -98,21 +99,12 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
       }
     }
 
-    const logLabels: Record<string, string> = {
-      brief_approved:       'approved the brief',
-      submitted_for_review: 'submitted for design review',
-      partial_approval:     'partially approved (pending manager sign-off)',
-      final_approval:       'gave final approval',
-      changes_requested:    'requested changes → back to Design Progress',
-      marked_posted:        'marked as posted',
-      status_change:        'changed status',
-    };
     for (const entry of (req.activityLog ?? [])) {
       items.push({
         kind: 'history',
         date: entry.timestamp,
         userId: entry.userId,
-        text: logLabels[entry.type] ?? entry.type,
+        text: describeActivity(entry),
       });
     }
 

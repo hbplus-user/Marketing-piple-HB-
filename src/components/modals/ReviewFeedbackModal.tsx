@@ -10,6 +10,7 @@ import CommentBody from '../shared/CommentBody';
 import { useApp } from '../../context/AppContext';
 import { canApprove, canRequestChanges, canRemoveCreator, canEditPostDate, canReassignOwner, canEditSubmission } from '../../utils/permissions';
 import { isValidUrl } from '../../utils/validation';
+import { describeActivity } from '../../utils/activityLog';
 
 const QUICK_CHIPS = [
   { emoji: '🎉', label: 'Looks good!' },
@@ -89,19 +90,10 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
   const followerUsers   = (req.followerIds ?? []).map(id => users.find(u => u.id === id)).filter(Boolean);
   const assigneeUsers   = req.assigneeIds.map(id => users.find(u => u.id === id)).filter(Boolean);
 
-  const historyLabels: Record<string, string> = {
-    brief_approved:       'approved the brief',
-    submitted_for_review: 'submitted for design review',
-    partial_approval:     'partially approved (pending manager sign-off)',
-    final_approval:       'gave final approval',
-    changes_requested:    'requested changes',
-    marked_posted:        'marked as posted',
-    status_change:        'changed status',
-  };
   const historyItems = [
     { kind: 'history' as const, date: req.createdAt, userId: req.requesterId as string | undefined, text: 'created this request' },
     ...req.postDateHistory.map(h => ({ kind: 'history' as const, date: h.date, userId: h.changedBy as string | undefined, text: `changed the post date — ${h.reason}` })),
-    ...(req.activityLog ?? []).map(e => ({ kind: 'history' as const, date: e.timestamp, userId: e.userId as string | undefined, text: historyLabels[e.type] ?? e.type })),
+    ...(req.activityLog ?? []).map(e => ({ kind: 'history' as const, date: e.timestamp, userId: e.userId as string | undefined, text: describeActivity(e) })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime());
   const commentItems = req.rounds.flatMap(round =>
     round.comments
