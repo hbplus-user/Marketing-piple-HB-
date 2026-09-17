@@ -43,6 +43,13 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
   const [showActivityRefLink, setShowActivityRefLink] = useState(false);
   const activityTextareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Unsent drafts for both composers, keyed by request id (see the reset effect below).
+  const draftsRef = useRef<Map<string, {
+    comment: string; refLink: string;
+    activityText: string; activityRefLink: string; showActivityRefLink: boolean;
+  }>>(new Map());
+  const draftKeyRef = useRef('');
+
   const req = requests.find(r => r.id === requestId);
 
   // Pre-check "Require Founder Approval" when it already carried over from Brief
@@ -51,32 +58,46 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
     setRequireFounder(req?.founderApprovalRequired === true);
   }, [requestId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Per-task scratch state. The modal stays mounted for the life of the page, so
+  // anything not moved here leaks into the next task — an unsent draft would show up
+  // under, and post to, the wrong thread. Unconditional on purpose: opening another
+  // task straight from this one never sets `open` to false, so an `if (!open)` guard
+  // would miss exactly that case.
+  //
+  // Both composers' drafts are parked under the id of the task they were written for,
+  // so coming back to that task restores them and every other task opens empty.
   useEffect(() => {
-    if (!open) {
-      setActivityComposerOpen(false);
-      setActivityText('');
-      setActivityRefLink('');
-      setShowActivityRefLink(false);
+    const leaving = draftKeyRef.current;
+    if (leaving) {
+      const hasDraft = comment.trim() || refLink.trim() || activityText.trim() || activityRefLink.trim();
+      if (hasDraft) {
+        draftsRef.current.set(leaving, {
+          comment, refLink,
+          activityText, activityRefLink, showActivityRefLink,
+        });
+      } else {
+        draftsRef.current.delete(leaving); // emptied by hand — don't resurrect it
+      }
     }
-  }, [open, requestId]);
 
-  // Per-task scratch state, cleared whenever the modal opens a different task or
-  // closes. The modal stays mounted for the life of the page, so anything not reset
-  // here leaks into the next task — an unsent draft would show up under, and post to,
-  // the wrong thread. Unconditional on purpose: switching straight from one task to
-  // another never sets `open` to false, so an `if (!open)` guard would miss it.
-  useEffect(() => {
+    const entering = open && requestId ? requestId : '';
+    const restored = entering ? draftsRef.current.get(entering) : undefined;
+    setComment(restored?.comment ?? '');
+    setRefLink(restored?.refLink ?? '');
+    setActivityText(restored?.activityText ?? '');
+    setActivityRefLink(restored?.activityRefLink ?? '');
+    setShowActivityRefLink(restored?.showActivityRefLink ?? false);
+    setActivityComposerOpen(!!restored?.activityText || !!restored?.activityRefLink);
+    draftKeyRef.current = entering;
+
     setEditingRound(null);
     setEditLinkInput('');
     setEditLinks([]);
     setEditNote('');
-    setComment('');
-    setRefLink('');
-    setActivityComposerOpen(false);
-    setActivityText('');
-    setActivityRefLink('');
-    setShowActivityRefLink(false);
-  }, [open, requestId]);
+    // Reads the composer fields deliberately without depending on them: this must fire
+    // only on a task switch, and they still hold the outgoing task's draft at that
+    // point, which is exactly what we want to park.
+  }, [open, requestId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (activityComposerOpen) activityTextareaRef.current?.focus();
