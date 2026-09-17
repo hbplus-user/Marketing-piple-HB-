@@ -8,6 +8,7 @@ import {
   compressRequests, decompressRequests,
   fetchBackupsFromSupabase, saveBackupToSupabase, deleteBackupFromSupabase,
 } from '../utils/backupUtils';
+import { mergeRequest } from '../utils/mergeRequest';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 
@@ -386,20 +387,67 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // timestamp in pendingWriteAt (see above) before firing it, so a poll/realtime
   // event that echoes back an older snapshot of this row gets ignored instead of
   // reverting the UI to stale data.
-  const syncToSupabase = useCallback((updated: ContentRequest) => {
+  // `before` is the copy the action was computed from. Given it, we can write back only
+  // the fields that actually changed and leave everything else at whatever the server
+  // now holds — so one person's comment no longer drags their stale `status` along with
+  // it. Without `before` we fall back to writing the whole document (legacy behaviour).
+  const syncToSupabase = useCallback(async (updated: ContentRequest, before?: ContentRequest) => {
     if (!authUser) return;
-    const at = Date.now();
-    pendingWriteAt.current.set(updated.id, at);
-    supabase.from('content_requests')
-      .upsert({ id: updated.id, data: updated, updated_at: new Date(at).toISOString() })
-      .then(({ error }) => {
+
+    // Compare-and-swap against `updated_at`: if someone wrote between our read and our
+    // write we re-read and re-merge rather than clobbering them.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const { data: row, error: readErr } = await supabase
+        .from('content_requests')
+        .select('data, updated_at')
+        .eq('id', updated.id)
+        .maybeSingle();
+
+      if (readErr) {
+        pendingWriteAt.current.delete(updated.id);
+        console.error('[Pipeline] Sync failed (read):', readErr.message);
+        return;
+      }
+
+      const merged = row
+        ? mergeRequest(migrateRequest(reviveObj(row.data) as ContentRequest), updated, before)
+        : updated;
+
+      const at = Date.now();
+      pendingWriteAt.current.set(updated.id, at);
+      const updatedAt = new Date(at).toISOString();
+
+      if (!row) {
+        const { error } = await supabase
+          .from('content_requests')
+          .upsert({ id: updated.id, data: merged, updated_at: updatedAt });
         if (error) {
-          // Drop the guard so the next poll is allowed to restore the true server state
-          // instead of the local edit that never landed.
           pendingWriteAt.current.delete(updated.id);
           console.error('[Pipeline] Sync failed:', error.message);
         }
-      });
+        return;
+      }
+
+      const { data: written, error } = await supabase
+        .from('content_requests')
+        .update({ data: merged, updated_at: updatedAt })
+        .eq('id', updated.id)
+        .eq('updated_at', row.updated_at)
+        .select('id');
+
+      if (error) {
+        // Drop the guard so the next poll is allowed to restore the true server state
+        // instead of the local edit that never landed.
+        pendingWriteAt.current.delete(updated.id);
+        console.error('[Pipeline] Sync failed:', error.message);
+        return;
+      }
+      if (written && written.length > 0) return; // landed
+
+      // Nothing matched: someone else wrote first. Loop to re-read and re-merge.
+      pendingWriteAt.current.delete(updated.id);
+    }
+    console.error('[Pipeline] Sync gave up after repeated write conflicts:', updated.id);
   }, [authUser]);
 
   const updateRequest = useCallback((id: string, updates: Partial<ContentRequest>) => {
@@ -416,7 +464,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       
       const updated = { ...target, ...finalUpdates };
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [syncToSupabase]);
@@ -523,7 +571,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         rounds: updatedRounds,
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [currentUser.id, currentUser.role, makeLogEntry, syncToSupabase]);
@@ -540,7 +588,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         status: 'Posted',
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [currentUser.id, makeLogEntry, syncToSupabase]);
@@ -558,7 +606,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         approvedBy: [],
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [makeLogEntry, syncToSupabase]);
@@ -578,7 +626,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         approvedBy: [],
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [makeLogEntry, syncToSupabase]);
@@ -599,7 +647,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         rounds: updatedRounds,
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [makeLogEntry, syncToSupabase]);
@@ -625,7 +673,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         assigneeAcceptance: [...(target.assigneeAcceptance ?? []), entry],
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [currentUser.id, makeLogEntry, syncToSupabase]);
@@ -644,7 +692,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         assigneeAcceptance: filtered,
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [makeLogEntry, syncToSupabase]);
@@ -665,7 +713,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         assigneeAcceptance: filteredAcceptance,
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [makeLogEntry, syncToSupabase]);
@@ -698,7 +746,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [makeLogEntry, syncToSupabase]);
@@ -720,7 +768,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         status: targetStatus,
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [makeLogEntry, syncToSupabase]);
@@ -748,7 +796,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         approvedBy: [],
         activityLog: [...(target.activityLog ?? []), logEntry],
       };
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [currentUser.id, makeLogEntry, syncToSupabase]);
@@ -763,7 +811,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         internalDeadline: calcInternalDeadline(newDate),
         postDateHistory: [...target.postDateHistory, { date: target.postDate, reason, changedBy: currentUser.id }],
       };
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [currentUser.id, syncToSupabase]);
@@ -776,7 +824,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...target,
         creatorRemovedFromApproval: true,
       };
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [syncToSupabase]);
@@ -799,7 +847,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...target,
         rounds: updatedRounds,
       };
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [currentUser.id, syncToSupabase]);
@@ -824,7 +872,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           : r
       );
       const updated: ContentRequest = { ...target, rounds: updatedRounds };
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [currentUser.id, syncToSupabase]);
@@ -842,7 +890,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           : r
       );
       const updated: ContentRequest = { ...target, rounds: updatedRounds };
-      syncToSupabase(updated);
+      syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
   }, [currentUser.role, syncToSupabase]);
