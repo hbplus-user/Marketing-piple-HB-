@@ -5,6 +5,7 @@ import { AppProvider } from './context/AppContext';
 import Dashboard from './pages/Dashboard';
 import LoginPage from './pages/LoginPage';
 import WelcomePage from './pages/WelcomePage';
+import UpdateBanner from './components/shared/UpdateBanner';
 
 type AppPhase = 'auth' | 'welcome' | 'dashboard';
 
@@ -98,6 +99,7 @@ function AppShell() {
 export default function App() {
   return (
     <AuthProvider>
+      <UpdateBanner />
       <AppShell />
     </AuthProvider>
   );

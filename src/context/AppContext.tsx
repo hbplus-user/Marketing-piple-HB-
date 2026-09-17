@@ -8,7 +8,7 @@ import {
   compressRequests, decompressRequests,
   fetchBackupsFromSupabase, saveBackupToSupabase, deleteBackupFromSupabase,
 } from '../utils/backupUtils';
-import { mergeRequest } from '../utils/mergeRequest';
+import { checkTransition, mergeRequest } from '../utils/mergeRequest';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 
@@ -127,6 +127,9 @@ interface AppState {
   toggleDateFilterType: (type: 'due' | 'post') => void;
   setDateFilterTypes: (types: ('due' | 'post')[]) => void;
   clearFilters: () => void;
+  /** Message explaining a change that was refused as out of date, or null. */
+  syncNotice: string | null;
+  dismissSyncNotice: () => void;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -156,6 +159,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // digits), so the old string comparison judged *every* row we had ever written to
   // be stale — permanently hiding freshly created tasks from later loads.
   const pendingWriteAt = useRef<Map<string, number>>(new Map());
+
+  // Writes for the same request run one after another. Each write reads the live row
+  // first, so without this two quick actions on one task (or StrictMode running a
+  // state updater twice) would both read the pre-write row and the second would judge
+  // the first's stage change to be stale.
+  const writeChain = useRef<Map<string, Promise<void>>>(new Map());
+
+  // Surfaced to the user when one of their changes is refused as out of date.
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const dismissSyncNotice = useCallback(() => setSyncNotice(null), []);
 
   // True only while an echo genuinely predates our own in-flight write. Entries also
   // expire, so a dropped/failed write can never blacklist a row for the whole session.
@@ -391,7 +404,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // the fields that actually changed and leave everything else at whatever the server
   // now holds — so one person's comment no longer drags their stale `status` along with
   // it. Without `before` we fall back to writing the whole document (legacy behaviour).
-  const syncToSupabase = useCallback(async (updated: ContentRequest, before?: ContentRequest) => {
+  const syncOnce = useCallback(async (updated: ContentRequest, before?: ContentRequest) => {
     if (!authUser) return;
 
     // Compare-and-swap against `updated_at`: if someone wrote between our read and our
@@ -409,9 +422,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const merged = row
-        ? mergeRequest(migrateRequest(reviveObj(row.data) as ContentRequest), updated, before)
-        : updated;
+      const server = row ? migrateRequest(reviveObj(row.data) as ContentRequest) : null;
+
+      if (server) {
+        const verdict = checkTransition(server, updated, before);
+        if (verdict === 'already-applied') {
+          pendingWriteAt.current.delete(updated.id);
+          return;
+        }
+        if (verdict === 'stale') {
+          // Refuse it, and snap this person's board to the real state so the card
+          // jumps back to its true column instead of sitting in the wrong one.
+          pendingWriteAt.current.delete(updated.id);
+          setRequests(prev => prev.map(r => (r.id === updated.id ? server : r)));
+          setSyncNotice(
+            `"${server.title}" was already moved to ${server.status} by someone else, so your ` +
+            `change (${before!.status} → ${updated.status}) was not applied. Your board has been updated.`
+          );
+          console.warn('[Pipeline] Refused stale stage change:', updated.id, before!.status, '→', updated.status, '; server is', server.status);
+          return;
+        }
+      }
+
+      const merged = server ? mergeRequest(server, updated, before) : updated;
 
       const at = Date.now();
       pendingWriteAt.current.set(updated.id, at);
@@ -449,6 +482,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     console.error('[Pipeline] Sync gave up after repeated write conflicts:', updated.id);
   }, [authUser]);
+
+  // `before` is the copy the action was computed from — see syncOnce. Queued per
+  // request id so each write reads the row as the previous write left it.
+  const syncToSupabase = useCallback((updated: ContentRequest, before?: ContentRequest) => {
+    const previous = writeChain.current.get(updated.id) ?? Promise.resolve();
+    const next = previous
+      .then(() => syncOnce(updated, before))
+      .catch(err => console.error('[Pipeline] Sync failed:', err));
+    writeChain.current.set(updated.id, next);
+    // Drop the entry once this is the tail, so the map doesn't grow for the session.
+    next.then(() => { if (writeChain.current.get(updated.id) === next) writeChain.current.delete(updated.id); });
+  }, [syncOnce]);
 
   const updateRequest = useCallback((id: string, updates: Partial<ContentRequest>) => {
     setRequests(prev => {
@@ -996,6 +1041,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       editPostDate, removeCreatorFromApproval, addComment, editComment, deleteComment,
       createBackup, restoreAll, restoreByRole, restoreByUser, restoreOne, deleteBackup,
       togglePipeline, setDateRange, toggleDateFilterType, setDateFilterTypes, clearFilters,
+      syncNotice, dismissSyncNotice,
     }}>
       {children}
     </AppContext.Provider>
