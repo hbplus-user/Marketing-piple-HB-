@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { format } from 'date-fns';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Paperclip, Link, ExternalLink, UserMinus, ShieldCheck, Calendar, Send, ChevronRight, Pencil, Plus, X } from 'lucide-react';
+import { Paperclip, Link, ExternalLink, UserMinus, ShieldCheck, Calendar, Send, ChevronRight, Pencil, Plus, X, ArrowRight } from 'lucide-react';
 import Modal from '../shared/Modal';
 import Badge from '../shared/Badge';
 import RoundBadge from '../shared/RoundBadge';
@@ -10,7 +10,8 @@ import CommentBody from '../shared/CommentBody';
 import { useApp } from '../../context/AppContext';
 import { canApprove, canRequestChanges, canRemoveCreator, canEditPostDate, canReassignOwner, canEditSubmission } from '../../utils/permissions';
 import { isValidUrl } from '../../utils/validation';
-import { describeActivity } from '../../utils/activityLog';
+import { describeActivity, type HistoryItem } from '../../utils/activityLog';
+import StatusChip from '../shared/StatusChip';
 
 const QUICK_CHIPS = [
   { emoji: '🎉', label: 'Looks good!' },
@@ -122,10 +123,10 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
   const followerUsers   = (req.followerIds ?? []).map(id => users.find(u => u.id === id)).filter(Boolean);
   const assigneeUsers   = req.assigneeIds.map(id => users.find(u => u.id === id)).filter(Boolean);
 
-  const historyItems = [
-    { kind: 'history' as const, date: req.createdAt, userId: req.requesterId as string | undefined, text: 'created this request' },
-    ...req.postDateHistory.map(h => ({ kind: 'history' as const, date: h.date, userId: h.changedBy as string | undefined, text: `changed the post date — ${h.reason}` })),
-    ...(req.activityLog ?? []).map(e => ({ kind: 'history' as const, date: e.timestamp, userId: e.userId as string | undefined, text: describeActivity(e) })),
+  const historyItems: HistoryItem[] = [
+    { kind: 'history' as const, date: req.createdAt, userId: req.requesterId, text: 'created this request' },
+    ...req.postDateHistory.map(h => ({ kind: 'history' as const, date: h.date, userId: h.changedBy, text: `changed the post date — ${h.reason}` })),
+    ...(req.activityLog ?? []).map(e => ({ kind: 'history' as const, date: e.timestamp, userId: e.userId, ...describeActivity(e) })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime());
   const commentItems = req.rounds.flatMap(round =>
     round.comments
@@ -554,10 +555,17 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                           ? <Avatar initials={user.initials} color={user.avatarColor} size="sm" />
                           : <div className="w-6 h-6 rounded-full bg-gray-200 flex-shrink-0" />
                         }
-                        <p className="text-[12px] text-gray-500">
-                          <span className="font-semibold text-gray-700">{user?.name ?? 'System'}</span>{' '}
-                          {item.text}
-                          <span className="ml-2 text-[11px] text-gray-400">
+                        <p className="text-[12px] text-gray-500 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                          <span className="font-semibold text-gray-700">{user?.name ?? 'System'}</span>
+                          <span>{item.text}</span>
+                          {item.from && item.to && (
+                            <span className="inline-flex items-center gap-1">
+                              <StatusChip status={item.from} />
+                              <ArrowRight size={11} className="text-gray-400 flex-shrink-0" />
+                              <StatusChip status={item.to} />
+                            </span>
+                          )}
+                          <span className="text-[11px] text-gray-400">
                             · {format(item.date, 'MMM d, yyyy')} at {format(item.date, 'h:mm a')}
                           </span>
                         </p>
