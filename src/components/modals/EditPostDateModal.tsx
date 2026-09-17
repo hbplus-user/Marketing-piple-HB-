@@ -10,6 +10,15 @@ export default function EditPostDateModal({ open, requestId }: { open: boolean; 
   const [newDate, setNewDate] = useState('');
   const [reason, setReason] = useState('');
 
+  // The modal is never unmounted, so an abandoned draft would otherwise still be
+  // sitting here the next time someone edits a *different* task's post date. Every
+  // exit — X, Cancel and Escape — goes through here.
+  const handleClose = () => {
+    setNewDate('');
+    setReason('');
+    closeModal();
+  };
+
   const req = requests.find(r => r.id === requestId);
   if (!req) return null;
 
@@ -27,7 +36,7 @@ export default function EditPostDateModal({ open, requestId }: { open: boolean; 
 
   if (!canEdit) {
     return (
-      <Modal open={open} onClose={closeModal} size="sm">
+      <Modal open={open} onClose={handleClose} size="sm">
         <div className="px-6 py-6 text-center">
           <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
             <ShieldAlert size={22} className="text-amber-500" />
@@ -39,7 +48,7 @@ export default function EditPostDateModal({ open, requestId }: { open: boolean; 
             She'll receive a notification and can override or reject.
           </p>
           <div className="flex gap-2">
-            <button onClick={closeModal} className="flex-1 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-200 rounded-lg transition-colors">
+            <button onClick={handleClose} className="flex-1 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-200 rounded-lg transition-colors">
               Cancel
             </button>
             <button className="flex-1 py-2 text-sm font-medium bg-[#a9674d] hover:bg-[#8a4f39] text-white rounded-lg flex items-center justify-center gap-1.5 transition-colors">
@@ -53,7 +62,7 @@ export default function EditPostDateModal({ open, requestId }: { open: boolean; 
   }
 
   return (
-    <Modal open={open} onClose={closeModal} title={`Edit post date · ${req.id}`} size="md">
+    <Modal open={open} onClose={handleClose} title={`Edit post date · ${req.id}`} size="md">
       <div className="px-6 py-5 space-y-5">
         <p className="text-sm font-semibold text-gray-900">{req.title}</p>
 
@@ -99,7 +108,7 @@ export default function EditPostDateModal({ open, requestId }: { open: boolean; 
       </div>
 
       <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
-        <button onClick={closeModal} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors">
+        <button onClick={handleClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors">
           Cancel
         </button>
         <button

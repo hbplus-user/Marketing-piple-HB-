@@ -60,11 +60,22 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
     }
   }, [open, requestId]);
 
+  // Per-task scratch state, cleared whenever the modal opens a different task or
+  // closes. The modal stays mounted for the life of the page, so anything not reset
+  // here leaks into the next task — an unsent draft would show up under, and post to,
+  // the wrong thread. Unconditional on purpose: switching straight from one task to
+  // another never sets `open` to false, so an `if (!open)` guard would miss it.
   useEffect(() => {
     setEditingRound(null);
     setEditLinkInput('');
     setEditLinks([]);
     setEditNote('');
+    setComment('');
+    setRefLink('');
+    setActivityComposerOpen(false);
+    setActivityText('');
+    setActivityRefLink('');
+    setShowActivityRefLink(false);
   }, [open, requestId]);
 
   useEffect(() => {
