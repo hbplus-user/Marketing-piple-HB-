@@ -38,6 +38,9 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
   const [refLink, setRefLink]           = useState('');
   const [showRefLink, setShowRefLink]   = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
+  // Unsent comment drafts, keyed by request id (see the per-task reset effect below).
+  const draftsRef   = useRef<Map<string, { text: string; refLink: string; showRefLink: boolean }>>(new Map());
+  const draftKeyRef = useRef('');
   const [activeTab, setActiveTab]       = useState<ActivityTab>('all');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [directReqFounder, setDirectReqFounder] = useState(false);
@@ -126,22 +129,42 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
     }
   }, [open, requestId]);
 
-  // Everything below is per-task scratch state. This modal is never unmounted —
-  // Dashboard keeps it rendered and only flips `open` and `requestId` — so React holds
-  // on to it unless we clear it by hand. Without this an unsent comment followed you
-  // onto the next task you opened, and Send would post it to that task's thread.
+  // Per-task scratch state. This modal is never unmounted — Dashboard keeps it
+  // rendered and only flips `open` and `requestId` — so React holds on to everything
+  // unless we move it by hand, and an unsent comment used to follow you onto the next
+  // task you opened (Send would then post it to that task's thread).
+  //
+  // Comment drafts aren't thrown away, they're parked under the id of the task they
+  // were written for: closing and reopening that task brings the draft back, while
+  // every other task opens with an empty box.
   useEffect(() => {
+    const leaving = draftKeyRef.current;
+    if (leaving) {
+      if (commentText.trim() || refLink.trim()) {
+        draftsRef.current.set(leaving, { text: commentText, refLink, showRefLink });
+      } else {
+        draftsRef.current.delete(leaving); // emptied by hand — don't resurrect it
+      }
+    }
+
+    const entering = open && requestId ? requestId : '';
+    const restored = entering ? draftsRef.current.get(entering) : undefined;
+    setCommentText(restored?.text ?? '');
+    setRefLink(restored?.refLink ?? '');
+    setShowRefLink(restored?.showRefLink ?? false);
+    setComposerOpen(!!restored); // expand the composer so a restored draft is visible
+    draftKeyRef.current = entering;
+
     setEditingRound(null);
     setEditLinkInput('');
     setEditLinks([]);
     setEditNote('');
-    setCommentText('');
-    setRefLink('');
-    setShowRefLink(false);
-    setComposerOpen(false);
     setDropdownOpen(false);
     setDirectReqFounder(false);
-  }, [open, requestId]);
+    // Reads commentText/refLink/showRefLink deliberately without depending on them:
+    // this must fire only on a task switch, and at that point they still hold the
+    // outgoing task's draft, which is exactly what we want to park.
+  }, [open, requestId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (composerOpen) textareaRef.current?.focus();
