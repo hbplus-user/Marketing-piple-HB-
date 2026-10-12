@@ -9,7 +9,8 @@ export type ActivityLogType =
   | 'final_approval'
   | 'changes_requested'
   | 'marked_posted'
-  | 'status_change';
+  | 'status_change'
+  | 'edited';
 
 export interface ActivityLogEntry {
   id: string;
