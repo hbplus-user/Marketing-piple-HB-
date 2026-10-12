@@ -8,6 +8,7 @@ import {
   compressRequests, decompressRequests,
   fetchBackupsFromSupabase, saveBackupToSupabase, deleteBackupFromSupabase,
 } from '../utils/backupUtils';
+import { describeFields, FIELD_LABELS, isSameFieldValue } from '../utils/activityLog';
 import { checkTransition, mergeRequest } from '../utils/mergeRequest';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
@@ -495,24 +496,63 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     next.then(() => { if (writeChain.current.get(updated.id) === next) writeChain.current.delete(updated.id); });
   }, [syncOnce]);
 
+  const makeLogEntry = useCallback((
+    type: ActivityLogEntry['type'],
+    fromStatus: Status,
+    toStatus: Status,
+    note?: string,
+  ): ActivityLogEntry => ({
+    id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    type,
+    userId: currentUser.id,
+    userName: currentUser.name,
+    timestamp: new Date(),
+    fromStatus,
+    toStatus,
+    note,
+  }), [currentUser.id, currentUser.name]);
+
   const updateRequest = useCallback((id: string, updates: Partial<ContentRequest>) => {
     setRequests(prev => {
       const target = prev.find(r => r.id === id);
       if (!target) return prev;
-      
-      let finalUpdates = { ...updates };
+
+      const finalUpdates = { ...updates };
       // Reset approvedBy to empty array if status changes to design/review and not explicitly overridden
       if (updates.status && (updates.status === 'Design' || updates.status === 'Design Progress' || updates.status === 'Design Review')) {
         if (finalUpdates.approvedBy === undefined) {
           finalUpdates.approvedBy = [];
         }
       }
-      
+
+      // Stamp who did this, unless the caller already wrote its own entry.
+      //
+      // Edits used to leave no trace of their author at all: the activity log only
+      // grew on approvals and stage changes. Anything reading the log for an actor
+      // therefore fell through to the *previous* action's entry and credited the
+      // wrong person — the Slack "Task updated ... By:" line being the visible case.
+      if (finalUpdates.activityLog === undefined) {
+        const statusChanged = finalUpdates.status !== undefined && finalUpdates.status !== target.status;
+        const editedFields = (Object.keys(finalUpdates) as (keyof ContentRequest)[])
+          .filter(k => k !== 'status' && k in FIELD_LABELS && !isSameFieldValue(finalUpdates[k], target[k]));
+
+        let entry: ActivityLogEntry | null = null;
+        if (statusChanged) {
+          entry = makeLogEntry('status_change', target.status, finalUpdates.status!,
+            editedFields.length ? `also changed ${describeFields(editedFields as string[])}` : undefined);
+        } else if (editedFields.length) {
+          entry = makeLogEntry('edited', target.status, target.status, describeFields(editedFields as string[]));
+        }
+        if (entry) {
+          finalUpdates.activityLog = [...(target.activityLog ?? []), entry];
+        }
+      }
+
       const updated = { ...target, ...finalUpdates };
       syncToSupabase(updated, target);
       return prev.map(r => r.id === id ? updated : r);
     });
-  }, [syncToSupabase]);
+  }, [makeLogEntry, syncToSupabase]);
 
   // Creating a request is the one write we do *not* fire optimistically. The id is
   // allocated from the server and the row is INSERTed (never upserted), so a colliding
@@ -553,21 +593,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
     return { ok: false, error: 'Could not allocate a free request id. Please try again.' };
   }, [authUser]);
-
-  const makeLogEntry = useCallback((
-    type: ActivityLogEntry['type'],
-    fromStatus: Status,
-    toStatus: Status,
-    note?: string,
-  ): ActivityLogEntry => ({
-    id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    type,
-    userId: currentUser.id,
-    timestamp: new Date(),
-    fromStatus,
-    toStatus,
-    note,
-  }), [currentUser.id]);
 
   const approveRequest = useCallback((id: string, requireFounderReview = false) => {
     const now = new Date();

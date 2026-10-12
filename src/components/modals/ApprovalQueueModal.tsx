@@ -54,6 +54,7 @@ export default function ApprovalQueueModal({ open }: { open: boolean }) {
     id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     type,
     userId: currentUser.id,
+    userName: currentUser.name,
     timestamp: new Date(),
     fromStatus,
     toStatus,

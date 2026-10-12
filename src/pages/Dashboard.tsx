@@ -18,9 +18,11 @@ import EditTaskModal from '../components/modals/EditTaskModal';
 import ManageTeamModal from '../components/modals/ManageTeamModal';
 import DragApproveModal from '../components/modals/DragApproveModal';
 import SyncNoticeBanner from '../components/shared/SyncNoticeBanner';
+import { useTaskDeepLink } from '../hooks/useTaskDeepLink';
 
 export default function Dashboard() {
   const { activeView, activeModal } = useApp();
+  useTaskDeepLink();
 
   return (
     <div className="flex h-screen bg-app-bg overflow-hidden">

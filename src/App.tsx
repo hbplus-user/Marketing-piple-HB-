@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import LoginPage from './pages/LoginPage';
 import WelcomePage from './pages/WelcomePage';
 import UpdateBanner from './components/shared/UpdateBanner';
+import { readTaskParam } from './hooks/useTaskDeepLink';
 
 type AppPhase = 'auth' | 'welcome' | 'dashboard';
 
@@ -17,8 +18,9 @@ function AppShell() {
     if (!session) {
       setAppPhase('auth');
     } else if (appPhase === 'auth') {
-      // Session restored on page refresh — show welcome page bird's-eye view
-      setAppPhase('welcome');
+      // Arriving from a Slack task link: go straight to the board so the deep
+      // link can open the task, instead of parking on the welcome screen.
+      setAppPhase(readTaskParam() ? 'dashboard' : 'welcome');
     }
   }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -9,12 +9,20 @@ export type ActivityLogType =
   | 'final_approval'
   | 'changes_requested'
   | 'marked_posted'
-  | 'status_change';
+  | 'status_change'
+  | 'edited';
 
 export interface ActivityLogEntry {
   id: string;
   type: ActivityLogType;
   userId: string;
+  /**
+   * Display name of whoever acted, captured at the time. Denormalised on purpose:
+   * the log stored only a uuid, so the data was unreadable in Supabase and anything
+   * outside the app (the Slack trigger) had to join `profiles` to name a person.
+   * Optional because entries written before this carry no name.
+   */
+  userName?: string;
   timestamp: Date;
   fromStatus: Status;
   toStatus: Status;

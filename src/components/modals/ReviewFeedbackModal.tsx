@@ -126,7 +126,7 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
   const historyItems: HistoryItem[] = [
     { kind: 'history' as const, date: req.createdAt, userId: req.requesterId, text: 'created this request' },
     ...req.postDateHistory.map(h => ({ kind: 'history' as const, date: h.date, userId: h.changedBy, text: `changed the post date — ${h.reason}` })),
-    ...(req.activityLog ?? []).map(e => ({ kind: 'history' as const, date: e.timestamp, userId: e.userId, ...describeActivity(e) })),
+    ...(req.activityLog ?? []).map(e => ({ kind: 'history' as const, date: e.timestamp, userId: e.userId, userName: e.userName, ...describeActivity(e) })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime());
   const commentItems = req.rounds.flatMap(round =>
     round.comments
@@ -556,7 +556,7 @@ export default function ReviewFeedbackModal({ open, requestId }: { open: boolean
                           : <div className="w-6 h-6 rounded-full bg-gray-200 flex-shrink-0" />
                         }
                         <p className="text-[12px] text-gray-500 flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                          <span className="font-semibold text-gray-700">{user?.name ?? 'System'}</span>
+                          <span className="font-semibold text-gray-700">{user?.name ?? item.userName ?? 'System'}</span>
                           <span>{item.text}</span>
                           {item.from && item.to && (
                             <span className="inline-flex items-center gap-1">
