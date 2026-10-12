@@ -107,6 +107,7 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
         kind: 'history',
         date: entry.timestamp,
         userId: entry.userId,
+        userName: entry.userName,
         ...describeActivity(entry),
       });
     }
@@ -527,7 +528,7 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
                             : <div className="w-5 h-5 rounded-full bg-gray-200 flex-shrink-0" />
                           }
                           <p className="text-[12px] text-gray-500 flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                            <span className="font-semibold text-gray-700">{user?.name ?? 'System'}</span>
+                            <span className="font-semibold text-gray-700">{user?.name ?? item.userName ?? 'System'}</span>
                             <span>{item.text}</span>
                             {item.from && item.to && (
                               <span className="inline-flex items-center gap-1">
@@ -826,6 +827,7 @@ export default function DesignerTaskModal({ open, requestId, openReviewForm }: {
                           id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
                           type: 'brief_approved' as const,
                           userId: currentUser.id,
+                          userName: currentUser.name,
                           timestamp: new Date(),
                           fromStatus: req.status,
                           toStatus,

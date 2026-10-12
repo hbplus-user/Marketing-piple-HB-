@@ -54,6 +54,8 @@ export interface HistoryItem {
   kind: 'history';
   date: Date;
   userId?: string;
+  /** Name captured when the action happened; used if the user list has no match. */
+  userName?: string;
   text: string;
   from?: Status;
   to?: Status;

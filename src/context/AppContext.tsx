@@ -505,11 +505,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     type,
     userId: currentUser.id,
+    userName: currentUser.name,
     timestamp: new Date(),
     fromStatus,
     toStatus,
     note,
-  }), [currentUser.id]);
+  }), [currentUser.id, currentUser.name]);
 
   const updateRequest = useCallback((id: string, updates: Partial<ContentRequest>) => {
     setRequests(prev => {
