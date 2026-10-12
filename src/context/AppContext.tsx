@@ -405,6 +405,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // the fields that actually changed and leave everything else at whatever the server
   // now holds — so one person's comment no longer drags their stale `status` along with
   // it. Without `before` we fall back to writing the whole document (legacy behaviour).
+  // A save that fails must not leave the screen claiming it worked. Until now the
+  // only trace was a console line: the card stayed in its new column until the 45s
+  // poll quietly put it back, which is exactly what "it posted, then went back on
+  // its own" looked like. Pull the real row, correct the board, and say what happened.
+  const revertToServer = useCallback(async (id: string, message: string) => {
+    pendingWriteAt.current.delete(id);
+    const { data: row } = await supabase
+      .from('content_requests')
+      .select('data')
+      .eq('id', id)
+      .maybeSingle();
+    if (row) {
+      const server = migrateRequest(reviveObj(row.data) as ContentRequest);
+      setRequests(prev => prev.map(r => (r.id === id ? server : r)));
+    }
+    setSyncNotice(message);
+  }, []);
+
   const syncOnce = useCallback(async (updated: ContentRequest, before?: ContentRequest) => {
     if (!authUser) return;
 
@@ -418,8 +436,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .maybeSingle();
 
       if (readErr) {
-        pendingWriteAt.current.delete(updated.id);
         console.error('[Pipeline] Sync failed (read):', readErr.message);
+        await revertToServer(updated.id,
+          `Couldn't save your change to "${updated.title}" — ${readErr.message}. Nothing was saved; please try again.`);
         return;
       }
 
@@ -456,8 +475,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           .from('content_requests')
           .upsert({ id: updated.id, data: merged, updated_at: updatedAt });
         if (error) {
-          pendingWriteAt.current.delete(updated.id);
           console.error('[Pipeline] Sync failed:', error.message);
+          await revertToServer(updated.id,
+            `Couldn't save your change to "${updated.title}" — ${error.message}. Nothing was saved; please try again.`);
         }
         return;
       }
@@ -470,10 +490,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .select('id');
 
       if (error) {
-        // Drop the guard so the next poll is allowed to restore the true server state
-        // instead of the local edit that never landed.
-        pendingWriteAt.current.delete(updated.id);
         console.error('[Pipeline] Sync failed:', error.message);
+        await revertToServer(updated.id,
+          `Couldn't save your change to "${updated.title}" — ${error.message}. ` +
+          `Your board has been put back to what is actually saved.`);
         return;
       }
       if (written && written.length > 0) return; // landed
@@ -482,7 +502,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       pendingWriteAt.current.delete(updated.id);
     }
     console.error('[Pipeline] Sync gave up after repeated write conflicts:', updated.id);
-  }, [authUser]);
+    await revertToServer(updated.id,
+      `Couldn't save your change to "${updated.title}" — other people were editing it at the ` +
+      `same time. Nothing was saved; please try again.`);
+  }, [authUser, revertToServer]);
 
   // `before` is the copy the action was computed from — see syncOnce. Queued per
   // request id so each write reads the row as the previous write left it.
